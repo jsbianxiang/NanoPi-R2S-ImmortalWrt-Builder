@@ -185,13 +185,20 @@ esac
 uci -q get network.globals >/dev/null 2>&1 || uci set network.globals=globals
 uci set network.globals.packet_steering='1'
 
-# [等价] 三个接口显式写 multipath='off'。
-#   multipath 是 MPTCP（RFC 8684）用的，netifd 未设该项时即为关闭；
-#   LuCI 保存接口页时会把 'off' 写上。写与不写行为一致。
-for _if in lan wan wan6; do
-    uci set "network.$_if.multipath='off'"
-done
-unset _if
+# [已移除] 曾在此为三个接口显式写 multipath='off'，现已删除。
+#   原因（三点，均已源码级核实）：
+#   1) 写法本身是坏的：`uci set "network.$_if.multipath='off'"` 会把**字面单引号**
+#      一起存进值（`uci set` 不解析引号），落盘成为 `'off'` 而非 `off` —— 与旧版
+#      `firewall.@rule[].enabled='1'` 是同一类缺陷。
+#   2) 值已过期：上游 LuCI 提交 317ff9dd76（2026-04-25）明确把「关闭」的表示
+#      从字符串 `off` 改为**空串**（`o.value('off', …)` → `o.value('', …)` +
+#      `o.optional = true`），理由是"`off` 与不写等价，写空串可避免无谓写入 flash"。
+#      也就是说本段写的 `off` 正是上游刚刚废弃的那个字面量。
+#   3) 语义不成立：`multipath` 需配合 `network.globals.multipath=enable` 才起作用；
+#      本固件不设该项（保持官方默认＝MPTCP 全局未启用），故这三个 `off` 纯属冗余。
+#      另注：netifd 全库（openwrt/netifd）检索 `multipath` / `mptcp` 均为 0 处命中，
+#      真正消费它的是 LuCI 生成路由表的扩展机制 —— 单纯写这一个选项不产生任何效果。
+#   ⇒ 删除后行为不变，仅少写三个无用参数。
 
 uci commit network
 

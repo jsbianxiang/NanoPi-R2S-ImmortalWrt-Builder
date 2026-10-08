@@ -126,13 +126,14 @@ GMAC，由内核直接支持。
 （执行后该脚本自动删除）。标注 **`[生效]`** 的才是真正改变运行行为的项；
 **`[等价]`** 的只是 LuCI 的写法归一化（改记法，或删掉「已废弃 / 本来就等于
 该选项默认值」的项），语义与官方默认**完全一致** —— 写进来只为让首启后的
-`uci show` 与手工配置过的设备逐行一致，便于比对排障。
+`uci show` 与手工配置过的设备逐行一致，便于比对排障；
+**`[已移除]`** 的是曾经写入、后因「写法有缺陷 / 已被上游废弃 / 纯冗余」而删除的项。
 
 | 分类 | 项 | 类型 | 说明 |
 | --- | --- | --- | --- |
 | 网络 | `network.globals.packet_steering='1'` | `[等价]` | 数据包引导。消费该值的 `packet-steering.uc` **只特判 `'0'`（关闭）与 `'2'`（全部 CPU）**，`'1'` 与「未设」走同一套默认算法，故等于不写。官方 `99-default-settings` 只为 bcm4908 / bcm53xx / ramips-mt7621 / x86 写入该项（rockchip 默认即「未设」） |
 | 网络 | LAN / WAN 地址改用 CIDR 列表记法 | `[等价]` | 用 `list ipaddr '192.168.2.1/24'` 取代 `ipaddr` + `netmask`，netifd 从前缀长度推掩码 |
-| 网络 | `lan` / `wan` / `wan6` 写 `multipath='off'` | `[等价]` | MPTCP 开关，netifd 未设该项时即为关闭 |
+| 网络 | 曾为 `lan` / `wan` / `wan6` 写 `multipath='off'` | `[已移除]` | MPTCP（RFC 8684）开关，现已删除。**三个原因**：① 写法把**字面单引号**写进值（`uci set "…multipath='off'"` 落盘为 `'off'`，与旧版 `enabled='1'` 同源缺陷）；② 上游 LuCI 提交 `317ff9dd76`（2026-04-25）已把「关闭」的表示从 `off` 改成**空串**，理由正是「`off` 与不写等价，写空串避免无谓写 flash」，本段写的正是刚被废弃的字面量；③ 该选项需配合 `network.globals.multipath=enable` 才起作用，本固件不设（保持官方默认＝MPTCP 全局未启用），故纯属冗余。另经检索 `openwrt/netifd` 全库 `multipath` / `mptcp` **均 0 处命中**，真正消费它的是 LuCI 生成路由表的扩展机制，单写一个孤儿选项无任何效果 |
 | 网络 | `wan6.norelease='1'` | `[生效]` | 重启时不发 DHCPv6 RELEASE（odhcp6c `-k`），降低上级回收地址导致**前缀变化**的概率。未设时 odhcp6c 会带 `-R`（退出时发 RELEASE），故这是真变更 |
 | 网络 | `wan` / `wan6` 的 `sendclientid='auto'` | `[等价]` | DHCP 客户端标识取「自动」。`dhcp.sh` 与 `dhcpv6.sh` 的 `case` 都是 `auto\|*)` **合并分支** —— 「未设」落进 `*)`，与 `auto` 走同一段代码，等于不写 |
 | DHCP | 删除 `dhcp.lan.ra_slaac`、`dhcp.lan.dhcpv6` | `[等价]` | odhcpd 的默认值本就是 `ra_slaac=true`、`dhcpv6=disabled`，删除后行为不变。**⚠ 删 `ra_slaac` 并不能关闭 SLAAC**，要关必须显式写 `ra_slaac='0'` |
