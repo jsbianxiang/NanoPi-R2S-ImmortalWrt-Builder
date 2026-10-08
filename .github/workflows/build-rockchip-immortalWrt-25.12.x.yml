@@ -4,7 +4,7 @@ name: Build R2S ImmortalWrt 25.12.x
 # NanoPi R2S 专用构建工作流 (25.12.x / apk)
 #
 # 目标机型：FriendlyARM NanoPi R2S (Rockchip RK3328 / ARM64)
-# 本分支(dev)为 R2S 专用：机型固定，且
+# 本分支(main)为 R2S 专用：机型固定，且
 #   - 不集成 Docker
 #   - 不集成 store / istore 商店
 #   - 不克隆任何第三方插件仓库

@@ -1,7 +1,7 @@
 # NanoPi-R2S-ImmortalWrt-Builder
 
 NanoPi R2S 专用：基于 GitHub Actions + ImmortalWrt 官方 Image Builder 的自动化固件构建工作流。
-本分支（`dev`）**专用于 FriendlyARM NanoPi R2S**。
+本分支（`main`）**专用于 FriendlyARM NanoPi R2S**。
 
 **⚠️ 重要声明**
 
@@ -72,7 +72,7 @@ NanoPi R2S 专用：基于 GitHub Actions + ImmortalWrt 官方 Image Builder 的
 
 > **提示**：`workflow_dispatch` 类型的工作流，**其文件必须存在于仓库的默认分支上**，
 > GitHub 才会在 Actions 页面显示 "Run workflow" 按钮（这是 GitHub 的硬性要求）。
-> 本仓库的默认分支已设为 **`dev`**，R2S 工作流就在 `dev` 上，因此可直接触发。
+> 本仓库的默认分支为 **`main`**，R2S 工作流就在 `main` 上，因此可直接触发。
 
 ---
 
