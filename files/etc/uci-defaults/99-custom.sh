@@ -282,14 +282,50 @@ uci set firewall.@defaults[0].synflood_protect='1'
 #   fullcone 本身（'1'，ImmortalWrt 为 firewall4 打过 fullcone 补丁）保持不变。
 uci -q delete firewall.@defaults[0].fullcone6
 
-# [等价] 9 条官方默认通信规则显式写 enabled='1'：
-#   Allow-DHCP-Renew / Allow-Ping / Allow-IGMP / Allow-DHCPv6 / Allow-MLD /
-#   Allow-ICMPv6-Input / Allow-ICMPv6-Forward / Allow-IPSec-ESP / Allow-ISAKMP。
-#   fw4 未设该选项时即为启用，所以这是纯写法归一化。
-for _i in 0 1 2 3 4 5 6 7 8; do
-    uci -q set "firewall.@rule[$_i].enabled='1'"
+# [生效] 修复历史遗留的非法 enabled 值（旧版本写入的脏数据）。
+#   旧实现是 `uci -q set "firewall.@rule[$_i].enabled='1'"` —— **引号被 shell 剥掉后
+#   `='1'` 整串交给 uci，而 uci set 不解析引号**，于是值被存成含字面单引号的 `'1'`。
+#   fw4 用 `enabled: [ "bool", "1" ]` 解析该值会失败，报
+#   `skipped due to invalid options` 并把**整个 rule 段丢弃** —— 表现为 9 条官方默认
+#   通信规则全部失效（Allow-Ping / Allow-DHCPv6 / Allow-ICMPv6-* … 都不再生效），
+#   WAN 侧比官方默认更严格。这不是「等价归一化」，而是一个真实造成过故障的缺陷。
+#
+#   现在做两件事：
+#     1) 存量修复：把**非法值**删掉。旧脚本只可能写出非法值，且这些段本意就是「启用」，
+#        故删掉（= 回落 fw4 默认「启用」）既修好了非法状态，也不会改变原意；
+#        ⚠ 合法的 `0`/`off`/… （用户主动禁用）**不在修复范围**，见下方白名单。
+#     2) 不再写入任何 enabled —— 交给 fw4 默认值即可。
+#
+#   ⚠ 一律按 **name** 匹配，不用 `@rule[N]` 下标：
+#     下标依赖「前 9 个匿名段恰好是那 9 条、顺序不变」，上游增删/重排默认规则、或某条
+#     被改成具名段（`@rule[N]` 不计具名段）即整体错位，可能改到本该禁用的规则上。
+#   ⚠ 判据是「值不属于 fw4 认可的布尔字面量」，**不是**「值 ≠ 1」：
+#     fw4 的 parse_bool 只认 真 = 1/on/true/yes、假 = 0/off/false/no，其余一律返回 null
+#     （→ invalid options → 整段丢弃）。所以 `enabled='0'` 是**合法且有意义**的用户选择，
+#     **绝不能**当成脏值删掉 —— 删掉即回落默认「启用」，等于偷偷把用户禁用的规则打开。
+#     下面的白名单同时保留 0/off/no/false 与 1/on/yes/true，只清真正非法的值。
+_rule_names="Allow-DHCP-Renew Allow-Ping Allow-IGMP Allow-DHCPv6 Allow-MLD \
+Allow-ICMPv6-Input Allow-ICMPv6-Forward Allow-IPSec-ESP Allow-ISAKMP"
+_fixed=0
+# 节名同时覆盖**匿名段**（firewall.@rule[N]）与**具名段**（firewall.<name>），
+# 且只取值为 rule 类型的节 —— 这样无论默认规则是匿名还是被改成具名，都能命中。
+for _sec in $(uci -q show firewall | sed -n 's/^\(firewall\.[^.=]*\)=rule$/\1/p'); do
+    _name=$(uci -q get "$_sec.name")
+    case " $_rule_names " in
+        *" $_name "*) ;;
+        *) continue ;;
+    esac
+    _val=$(uci -q get "$_sec.enabled")
+    case "$_val" in
+        # 未设，或 fw4 认可的合法布尔字面量 → 一律不动（含用户主动设的 0/off/no/false）
+        ''|1|0|on|off|true|false|yes|no) continue ;;
+    esac
+    uci -q delete "$_sec.enabled"
+    _fixed=$((_fixed + 1))
+    echo "fix invalid enabled on $_sec ($_name): '$_val' -> removed" >>$LOGFILE
 done
-unset _i
+[ "$_fixed" -gt 0 ] && echo "firewall rules repaired: $_fixed" >>$LOGFILE
+unset _rule_names _sec _name _val _fixed
 
 # [生效] 关闭流量卸载（软件 + 硬件）。
 #   官方默认配置里这两项是 '1'（开启），而 fw4 的默认值是 0

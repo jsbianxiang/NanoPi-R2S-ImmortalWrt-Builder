@@ -141,11 +141,13 @@ GMAC，由内核直接支持。
 | DHCP | 删除 `dnsmasq` 的 `nonwildcard` / `boguspriv` / `filterwin2k` / `filter_aaaa` / `filter_a`，以及 `odhcpd.maindhcp` | `[等价]` | 每一项都等于其默认值（`nonwildcard` 默认 1、`boguspriv` 默认 1，其余默认 0） |
 | DHCP | 删除 `dnsmasq.dns_redirect` | `[生效]` | **ImmortalWrt 特有**选项（上游 OpenWrt 没有）。置 1 时 dnsmasq 会插入 nft 规则把**所有过路 UDP/53** 劫持到本机（规则注释 `DNSMASQ HIJACK`），与 Clashoo 自己接管 DNS 的行为冲突，故关闭 |
 | 防火墙 | `syn_flood` → `synflood_protect='1'` | `[等价]` | 选项改名迁移（LuCI 保存该页时即如此），SYN-flood 保护保持**开启** |
-| 防火墙 | 删除 `fullcone6`；9 条默认通信规则写 `enabled='1'` | `[等价]` | 均为各自默认行为 |
+| 防火墙 | 删除 `fullcone6` | `[等价]` | 原本就是关闭（未设即关闭） |
+| 防火墙 | 清理 9 条默认通信规则上的**非法 `enabled` 值** | `[生效]` | **修历史脏数据**。旧版脚本用 `uci -q set "…enabled='1'"` 把**含字面单引号的 `'1'`** 写进了配置（`uci set` 不解析引号），fw4 解析该布尔值失败 → 报 `skipped due to invalid options` → **整条规则段被丢弃**，`Allow-Ping` / `Allow-DHCPv6` / `Allow-ICMPv6-*` 等**全部失效**。现按 `name` 匹配、只清非法值（删掉即回落 fw4 默认「启用」），不再写入 `enabled` |
 | 防火墙 | 删除 `flow_offloading` / `flow_offloading_hw` | `[生效]` | **关闭流量卸载**。fw4 的默认值是 0（官方配置里写的 `'1'` 才是开启），删除即关闭；flow offload 会让首包之后的流量走 fast path **绕过 netfilter 钩子**，与 Clashoo 这类 TPROXY 透明代理冲突 |
 
-> **小结：首启真正改变行为的只有 3 项** —— `wan6.norelease='1'`、
-> 关闭 DNS 劫持（删 `dns_redirect`）、关闭流量卸载（删 `flow_offloading*`）；
+> **小结：首启真正改变行为的只有 4 项** —— `wan6.norelease='1'`、
+> 关闭 DNS 劫持（删 `dns_redirect`）、关闭流量卸载（删 `flow_offloading*`）、
+> 以及**清理 9 条默认通信规则上的非法 `enabled` 值**（修复旧版本写入的脏数据）；
 > 其余全部是写法归一化。
 >
 > 各项的判断依据均取自上游源码（odhcpd `src/config.c`、`dnsmasq.init`、
@@ -262,8 +264,11 @@ LICENSE                                   # 许可证
 - 固件**不提供** `/etc/config/firewall`（完全继承 `firewall4` 包的默认配置）；
 - `99-custom.sh` 中**不修改任何区域（zone）、转发与通信规则的策略**，只做三件
   与策略无关的事（详见上文「首启初始化」）：
-  ① 把已废弃的 `syn_flood` 迁移成 `synflood_protect`（保护**保持开启**）；
-  ② 删除 `fullcone6`、给 9 条默认规则写 `enabled='1'`（均为默认行为）；
+  ① 把已废弃的 `syn_flood` 迁移成 `synflood_protect`（保护**保持开启**），
+     并删除 `fullcone6`（均为默认行为）；
+  ② **修复历史遗留的非法 `enabled` 值** —— 旧版脚本曾把含字面单引号的 `'1'` 写进
+     9 条默认通信规则，导致 fw4 判定选项非法、**整段规则被丢弃**；现按 `name` 匹配、
+     只清非法值（删掉即回落默认「启用」），**不改变任何规则的启用/禁用意图**；
   ③ **关闭流量卸载**（`flow_offloading` / `flow_offloading_hw`），
      避免与 Clashoo 的 TPROXY 透明代理冲突。
 
