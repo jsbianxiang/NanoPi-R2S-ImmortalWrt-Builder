@@ -1,0 +1,41 @@
+# =========================================================
+# 换行符统一为 LF（强制）
+# ---------------------------------------------------------
+# 本仓库的构建脚本与工作流都在 Linux（GitHub Actions 容器）中执行。
+# 若文件混入 CRLF，会出现：
+#   - shell: /bin/bash^M: bad interpreter: No such file or directory
+#   - 脚本里 `\r` 混入变量/路径，导致 uci / sed / grep 结果异常
+#   - YAML、UCI 配置解析失败
+#
+# 说明：
+#   eol=lf 的优先级高于本机 core.autocrlf，
+#   因此无论 Windows 还是 Linux 检出，工作区都保持 LF。
+#   text=auto 会让 git 自动识别二进制文件并跳过转换。
+# =========================================================
+
+# 默认：自动识别文本文件，统一以 LF 存储与检出
+* text=auto eol=lf
+
+# 显式声明为文本并强制 LF（防止个别环境误判）
+*.sh       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.md       text eol=lf
+*.txt      text eol=lf
+*.conf     text eol=lf
+*.config   text eol=lf
+.gitattributes text eol=lf
+LICENSE    text eol=lf
+
+# 二进制文件：不做任何换行转换
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.gz    binary
+*.xz    binary
+*.zip   binary
+*.img   binary
+*.apk   binary
+*.ipk   binary

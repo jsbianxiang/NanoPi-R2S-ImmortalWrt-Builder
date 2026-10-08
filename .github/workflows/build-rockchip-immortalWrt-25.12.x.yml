@@ -1,0 +1,173 @@
+name: Build R2S ImmortalWrt 25.12.x
+
+# =========================================================
+# NanoPi R2S 专用构建工作流 (25.12.x / apk)
+#
+# 目标机型：FriendlyARM NanoPi R2S (Rockchip RK3328 / ARM64)
+# 本分支(dev)为 R2S 专用：机型固定，且
+#   - 不集成 Docker
+#   - 不集成 store / istore 商店
+#   - 不克隆任何第三方插件仓库
+#   - 不使用 PPPoE 拨号
+# 第三方包仅来自 build.sh 中注入的 Clashoo 源（down.dllkids.xyz）。
+#
+# 网络模型：R2S 的 WAN 口接上级设备，默认采用【DHCP】接入（与 ImmortalWrt 官方
+#          默认一致）；如需固定地址，把 wan_proto 选为 static 改为静态 IP 接入。
+#          WAN6 保持 DHCPv6，以便从上级获取 IPv6 前缀委派（PD）。
+# =========================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      luci_version:
+        description: "选择 luci 版本"
+        required: false
+        default: "25.12.2"
+        type: choice
+        options:
+          - 25.12.0
+          - 25.12.1
+          - 25.12.2
+      custom_router_ip:
+        description: "R2S 管理地址(LAN) 格式:192.168.x.1 或 10.x.x.1"
+        required: true
+        default: "192.168.2.1"
+      rootfs_partsize:
+        description: "软件包空间大小"
+        required: true
+        type: choice
+        default: "1G"
+        options:
+          - "1G"
+          - "2G"
+          - "3G"
+          - "4G"
+      wan_proto:
+        description: "WAN 接入方式（dhcp 为官方默认，static 为静态 IP）"
+        required: true
+        type: choice
+        default: "dhcp"
+        options:
+          - dhcp
+          - static
+      wan_ip:
+        description: "WAN 静态 IP（仅 wan_proto=static 时生效）"
+        required: false
+        default: "192.168.1.2"
+      wan_gateway:
+        description: "WAN 网关（仅 wan_proto=static 时生效，如上级光猫 192.168.1.1）"
+        required: false
+        default: "192.168.1.1"
+      wan_dns:
+        description: "WAN DNS（仅 wan_proto=static 时生效，留空则用网关；可空格分隔填多个）"
+        required: false
+        default: "192.168.1.1"
+
+permissions:
+  contents: write
+
+# 同一时间只跑一个构建：Release 固定复用 tag `Autobuild`，
+# 并发触发会互相覆盖产物，因此串行化。
+concurrency:
+  group: r2s-immortalwrt-build
+  cancel-in-progress: false
+
+# R2S 专用：目标机型固定，不再由用户选择
+env:
+  PROFILE: "friendlyarm_nanopi-r2s"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set executable permissions
+        run: chmod +x ${{ github.workspace }}/rockchip/build.sh
+
+      - name: Save Custom Router IP into OpenWrt files
+        run: |
+          mkdir -p "${{ github.workspace }}/custom"
+          echo "${{ inputs.custom_router_ip }}" > "${{ github.workspace }}/custom/custom_router_ip.txt"
+          echo "R2S 管理地址:${{ inputs.custom_router_ip }}"
+
+      - name: Validate WAN Inputs
+        run: |
+          if [[ "${{ inputs.wan_proto }}" == "static" ]]; then
+            if [[ -z "${{ inputs.wan_ip }}" || -z "${{ inputs.wan_gateway }}" ]]; then
+              echo "Error: wan_proto=static 时 wan_ip 与 wan_gateway 均为必填项！"
+              exit 1
+            fi
+            echo "WAN 接入方式: static  地址: ${{ inputs.wan_ip }}  网关: ${{ inputs.wan_gateway }}  DNS: ${{ inputs.wan_dns }}"
+          else
+            echo "WAN 接入方式: dhcp（官方默认，地址由上级设备分配，无需填写 wan_ip/wan_gateway）"
+          fi
+
+      - name: Building R2S ImmortalWrt 25.12.x
+        run: |
+          rootfs_partsize="${{ inputs.rootfs_partsize }}"
+          case "$rootfs_partsize" in
+            1G)
+              ROOTFS_SIZE=1024
+              ;;
+            2G)
+              ROOTFS_SIZE=2048
+              ;;
+            3G)
+              ROOTFS_SIZE=3072
+              ;;
+            4G)
+              ROOTFS_SIZE=4096
+              ;;
+          esac
+          echo "ROOTFS_SIZE=$ROOTFS_SIZE" >> $GITHUB_ENV
+          luci_version="${{ inputs.luci_version }}"
+          echo "Building for profile: $PROFILE"
+          docker run --rm -i \
+              --user root \
+              -v "${{ github.workspace }}/bin:/home/build/immortalwrt/bin" \
+              -v "${{ github.workspace }}/files:/home/build/immortalwrt/files" \
+              -v "${{ github.workspace }}/custom:/home/build/immortalwrt/files/etc/config" \
+              -v "${{ github.workspace }}/rockchip/imm.config:/home/build/immortalwrt/.config" \
+              -v "${{ github.workspace }}/shell:/home/build/immortalwrt/shell" \
+              -v "${{ github.workspace }}/rockchip/build.sh:/home/build/immortalwrt/build.sh" \
+              -e PROFILE="$PROFILE" \
+              -e ROOTFS_PARTSIZE="$ROOTFS_SIZE" \
+              -e WAN_PROTO="${{ inputs.wan_proto }}" \
+              -e WAN_IP="${{ inputs.wan_ip }}" \
+              -e WAN_GATEWAY="${{ inputs.wan_gateway }}" \
+              -e WAN_DNS="${{ inputs.wan_dns }}" \
+          immortalwrt/imagebuilder:rockchip-armv8-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
+
+      - name: Create info
+        run: |
+          if [[ "${{ inputs.wan_proto }}" == "static" ]]; then
+            WAN_LINE="- 🌐 **WAN 接入**: 静态 IP ${{ inputs.wan_ip }} / 网关 ${{ inputs.wan_gateway }}"
+          else
+            WAN_LINE="- 🌐 **WAN 接入**: DHCP（由上级设备自动分配地址）"
+          fi
+          cat > ${{ github.workspace }}/router-info.md <<EOF
+          ## 📡 R2S 固件信息
+
+          - ✳️ **机型**: NanoPi R2S (Rockchip RK3328)
+          - 🏷️ **Image Builder 版本**: ${{ inputs.luci_version }}
+          - 🏠 **后台地址**: ${{ inputs.custom_router_ip }}
+          ${WAN_LINE}
+          - 🧬 **WAN6**: DHCPv6（用于获取 PD 前缀）
+          - 👤 **用户名**: root
+          - 🔑 **密码**: 无
+          EOF
+
+      - name: Upload ImmortalWrt as release assets
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: Autobuild
+          name: ImmortalWrt-R2S
+          body_path: ${{ github.workspace }}/router-info.md
+          files: |
+            ${{ github.workspace }}/bin/targets/rockchip/armv8/*.img.gz
+          token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
