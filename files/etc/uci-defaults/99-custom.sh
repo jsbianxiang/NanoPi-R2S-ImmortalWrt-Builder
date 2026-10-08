@@ -27,13 +27,15 @@
 #   7) ttyd / dropbear 的监听范围（保持上游默认，仅局域网可管理）
 #
 # 第 3～5 节的条目由「在 LuCI 里逐页点保存」的等价 uci 操作整理而来，
-# 每条都标注了 [生效] 或 [等价]：
-#   [生效] 真正改变运行行为（README「首启初始化」小节有汇总）；
-#   [等价] 只是 LuCI 的写法归一化 —— 或改记法，或删掉「已废弃 / 本来就等于
-#          该选项默认值」的项，语义与改动前完全一致。
+# 每条都标注了 [生效] / [等价] / [已移除] 三类之一：
+#   [生效]   真正改变运行行为（README「首启初始化」小节有汇总）；
+#   [等价]   只是 LuCI 的写法归一化 —— 或改记法，或删掉「已废弃 / 本来就等于
+#            该选项默认值」的项，语义与改动前完全一致；
+#   [已移除] 原实现写过、后经核实属无效或有害，现已删除（保留注释说明原因，
+#            防止日后被误从上游合回）。
 # 之所以把 [等价] 项也写进来，是为了让首启后的 `uci show` 与手工配置过的
 # 设备逐行一致，便于比对排障。判断依据均来自上游源码（odhcpd config.c、
-# dnsmasq.init、firewall4 fw4.uc、LuCI zones.js/interfaces.js），注释里给了出处。
+# dnsmasq.init、firewall4 fw4.uc、LuCI zones.js），注释里给了出处。
 # =========================================================
 
 LOGFILE="/etc/config/uci-defaults-log.txt"
@@ -99,11 +101,18 @@ case "$wan_proto" in
             *)   uci add_list network.wan.ipaddr="$wan_ip/24" ;;
         esac
         uci set network.wan.gateway="$wan_gateway"
-        # DNS 同样用列表记法（可填多个，空格分隔）
+        # DNS 同样用列表记法（可填多个，空格分隔）。
+        # ⚠ `for _dns in $wan_dns` 在分词之外还会做**路径名展开**：若值里含
+        #   `*` / `?` / `[`，会被 glob 成当前目录下的文件名（例如 wan_dns='*'
+        #   会写入一堆文件名），且不报错。故此处临时 `set -f` 关闭 glob；
+        #   子 shell 包裹保证退出后不影响后续代码。
         uci -q delete network.wan.dns
-        for _dns in $wan_dns; do
-            uci add_list network.wan.dns="$_dns"
-        done
+        (
+            set -f
+            for _dns in $wan_dns; do
+                uci add_list network.wan.dns="$_dns"
+            done
+        )
         unset _dns
         echo "WAN static: ip=$wan_ip gw=$wan_gateway dns=$wan_dns" >>$LOGFILE
         ;;
@@ -155,7 +164,16 @@ uci -q delete network.lan.ipaddr
 CUSTOM_IP='192.168.2.1'
 IP_VALUE_FILE="/etc/config/custom_router_ip.txt"
 if [ -f "$IP_VALUE_FILE" ]; then
-    _tmp=$(cat "$IP_VALUE_FILE")
+    # 逐行读首个非空行 —— 既可裁掉可能的结尾换行，也能剔除首尾空白：
+    #   `_tmp=$(cat file)` 会**保留**首尾空格，若文件是 "192.168.2.1  " 就会
+    #   拼成 "192.168.2.1  /24" 导致 netifd 解析失败；纯空白文件还会被
+    #   `[ -n ]` 误判为「非空」。这里用 read 天然跳过前导空白，再手动裁尾部。
+    _tmp=''
+    if read -r _tmp < "$IP_VALUE_FILE" 2>/dev/null; then :; fi
+    # 裁掉尾部空白（前导空白已由 read 的 IFS 机制吃掉）
+    while [ "${_tmp%[[:space:]]}" != "$_tmp" ]; do
+        _tmp="${_tmp%[[:space:]]}"
+    done
     if [ -n "$_tmp" ]; then
         CUSTOM_IP="$_tmp"
         echo "custom router ip is $CUSTOM_IP" >>$LOGFILE
@@ -256,7 +274,10 @@ uci -q delete dhcp.odhcpd.maindhcp
 #     fi
 #   即置 1 时会把**所有过路的 UDP/53**（含 LAN 客户端发往外部 DNS 的查询）
 #   强行 NAT 重定向到本机 dnsmasq。不用代理插件时这是「防 DNS 泄漏」，
-#   但与 Clashoo 这类自己接管 DNS 的插件会互相打架，故关闭（该项默认值本就是 0）。
+#   但与 Clashoo 这类自己接管 DNS 的插件会互相打架，故关闭。
+#   ⚠ 注意：上面的 `config_get_bool ... 0` 只是**脚本兜底默认**（选项缺失时取 0），
+#   而 ImmortalWrt 发布的 /etc/config/dhcp 里**显式写了 `option dns_redirect 1`**，
+#   所以设备上该项出厂就是**开的** —— 这行 delete 确实改变了运行行为（故标 [生效]）。
 uci -q delete dhcp.@dnsmasq[0].dns_redirect
 
 uci commit dhcp
