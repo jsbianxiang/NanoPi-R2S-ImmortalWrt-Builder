@@ -141,7 +141,6 @@ GMAC，由内核直接支持。
 | DHCP | `dhcp.wan.leasetime='12h'` / `start='100'` / `limit='150'` | `[等价]` | WAN 侧本就不提供 DHCP 服务（`dhcp.wan.ignore='1'` 是官方默认），这三项不产生实际效果；写上只为与设备现状一致 |
 | DHCP | 删除 `dnsmasq` 的 `nonwildcard` / `boguspriv` / `filterwin2k` / `filter_aaaa` / `filter_a`，以及 `odhcpd.maindhcp` | `[等价]` | 每一项都等于其默认值（`nonwildcard` 默认 1、`boguspriv` 默认 1，其余默认 0） |
 | DHCP | 删除 `dnsmasq.dns_redirect` | `[生效]` | **ImmortalWrt 特有**选项（上游 OpenWrt 没有）。置 1 时 dnsmasq 会插入 nft 规则把**所有过路 UDP/53** 劫持到本机（规则注释 `DNSMASQ HIJACK`），与 Clashoo 自己接管 DNS 的行为冲突，故关闭 |
-| 防火墙 | `syn_flood` → `synflood_protect='1'` | `[等价]` | 选项改名迁移（LuCI 保存该页时即如此），SYN-flood 保护保持**开启** |
 | 防火墙 | 删除 `fullcone6` | `[等价]` | IPv6 全锥形 NAT，原本就是关闭（未设即关闭），删掉仍为关闭 |
 | 防火墙 | 删除 `fullcone`（IPv4 全锥形 NAT） | `[生效]` | **关闭 IPv4 fullcone**。默认 '1' 由 ImmortalWrt 的 firewall4 fullcone 补丁注入到 @defaults，删掉即退回标准 masquerade。本机 WAN 处于**双 NAT**，上游 symmetric NAT 会抵消 fullcone 收益，对公网无实益且映射更宽松，关掉更保守、更接近 stock OpenWrt |
 | 防火墙 | 删除 `flow_offloading` / `flow_offloading_hw` | `[生效]` | **关闭流量卸载**。fw4 的默认值是 0（官方配置里写的 `'1'` 才是开启），删除即关闭；flow offload 会让首包之后的流量走 fast path **绕过 netfilter 钩子**，与 Clashoo 这类 TPROXY 透明代理冲突 |

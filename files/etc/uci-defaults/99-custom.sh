@@ -300,15 +300,14 @@ uci commit dhcp
 # =========================================================
 # 区域（zone）策略**不动**：完全沿用 firewall4 官方默认
 # （lan 全 ACCEPT；wan 入站 REJECT / 转发 DROP / masq），详见 README「WAN 入站防火墙」。
-# 下面只做四项。
+# 下面只做三项。
 
-# [等价] SYN-flood 保护的选项改名迁移。
-#   LuCI 保存「防火墙 → 常规设置」时会把旧名 syn_flood 换成新名 synflood_protect
-#   （luci-mod-network .../view/firewall/zones.js：读取时优先 synflood_protect、
-#   回退 syn_flood；写入时 unset syn_flood + set synflood_protect）。
-#   两者语义相同，保护本身保持「开」。
-uci -q delete firewall.@defaults[0].syn_flood
-uci set firewall.@defaults[0].synflood_protect='1'
+# [已移除] SYN-flood 保护的「改名迁移」段（原 `uci delete syn_flood` + `uci set
+#   synflood_protect='1'`）已删除 —— 纯冗余。出厂默认 `/etc/config/firewall` 本就带
+#   `option syn_flood 1`（旧名），fw4 在无 `synflood_protect` 时回退读 `syn_flood`，
+#   保护照常开启；故不写这段与现状零差别，且少踩「双引号包单引号」覆写陷阱。
+#   （`synflood_protect` 在 fw4 的 schema 无默认值，unset 即关；保护是靠出厂 `syn_flood`
+#   打开的，不是靠本脚本。）勿再从上游合回。
 
 # [等价] fullcone6 原本就是 '0'（关闭），删掉后仍为关闭（未设即关闭）。
 uci -q delete firewall.@defaults[0].fullcone6
