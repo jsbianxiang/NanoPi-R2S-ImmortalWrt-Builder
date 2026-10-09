@@ -300,14 +300,16 @@ uci commit dhcp
 # =========================================================
 # 区域（zone）策略**不动**：完全沿用 firewall4 官方默认
 # （lan 全 ACCEPT；wan 入站 REJECT / 转发 DROP / masq），详见 README「WAN 入站防火墙」。
-# 下面只做三项。
+# 下面只做四项。
 
-# [已移除] SYN-flood 保护的「改名迁移」段（原 `uci delete syn_flood` + `uci set
-#   synflood_protect='1'`）已删除 —— 纯冗余。出厂默认 `/etc/config/firewall` 本就带
-#   `option syn_flood 1`（旧名），fw4 在无 `synflood_protect` 时回退读 `syn_flood`，
-#   保护照常开启；故不写这段与现状零差别，且少踩「双引号包单引号」覆写陷阱。
-#   （`synflood_protect` 在 fw4 的 schema 无默认值，unset 即关；保护是靠出厂 `syn_flood`
-#   打开的，不是靠本脚本。）勿再从上游合回。
+# [生效] 关闭 SYN-flood 防护（SYN cookies + WAN 侧新连接限速）。
+#   fw4 的 `synflood_protect` 无默认值（unset 即关），保护是靠**出厂** `/etc/config/firewall`
+#   的 `option syn_flood 1`（旧名）打开的。本机 R2S 的 IPv4 WAN 处于双 NAT，对外不直接暴露、
+#   几乎无 SYN flood 风险，关闭亦无副作用，故删掉出厂的 `syn_flood` 让其回落 fw4 默认「关」。
+#   （与 fullcone 同理：双 NAT 下这类「抗公网攻击 / 提升公网可达性」的特性都无实益；
+#   若日后 WAN 拿到公网 IP 想恢复防护，在 LuCI「网络 → 防火墙 → 常规设置」勾选 SYN-flood
+#   防护即可。）
+uci -q delete firewall.@defaults[0].syn_flood
 
 # [等价] fullcone6 原本就是 '0'（关闭），删掉后仍为关闭（未设即关闭）。
 uci -q delete firewall.@defaults[0].fullcone6
