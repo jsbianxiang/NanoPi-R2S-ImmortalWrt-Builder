@@ -327,10 +327,11 @@ uci commit firewall
 #   - 30_luci-theme-bootstrap ：只在「该选项尚不存在」时才设
 #                               （luci-base 自带 /etc/config/luci 的默认值已是 bootstrap）
 # 而 uci-defaults 按文件名字母序执行，argon 在前 —— 它先改掉，bootstrap 便不再改，
-# 结果默认主题会变成 Argon。本脚本 99- 前缀保证在所有 30_ 之后执行，显式设回 Bootstrap。
+# 结果默认主题会变成 Argon。本脚本 99- 前缀保证在所有 30_ 之后执行，
+# 显式设回 Bootstrap，取消下方命令前的注释即可。
 # （用户之后仍可在 LuCI「系统 → 系统 → 语言和界面」里切回 Argon）
-uci set luci.main.mediaurlbase='/luci-static/bootstrap'
-uci commit luci
+# uci set luci.main.mediaurlbase='/luci-static/bootstrap'
+# uci commit luci
 
 # =========================================================
 # 7. ttyd / dropbear 的监听范围
