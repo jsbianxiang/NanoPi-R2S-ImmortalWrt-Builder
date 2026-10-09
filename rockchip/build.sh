@@ -42,7 +42,6 @@ cat repositories
 # 定义所需安装的包列表 下列插件你都可以自行删减
 PACKAGES=""
 PACKAGES="$PACKAGES curl"
-PACKAGES="$PACKAGES kmod-tcp-bbr"
 PACKAGES="$PACKAGES bind-tools"
 PACKAGES="$PACKAGES ca-certificates"
 PACKAGES="$PACKAGES openssh-sftp-server"
