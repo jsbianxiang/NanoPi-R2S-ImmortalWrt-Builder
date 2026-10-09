@@ -298,7 +298,17 @@ uci commit dhcp
 # =========================================================
 # 5. 防火墙
 # =========================================================
-# 区域（zone）策略**不动**：完全沿用 firewall4 官方默认
+
+# 区域（zone）策略**按需修改**：其余沿用 firewall4 官方默认
+
+uci -q delete firewall.@defaults[0].syn_flood
+uci set firewall.@defaults[0].synflood_protect
+uci -q delete firewall.@defaults[0].fullcone
+uci -q delete firewall.@defaults[0].fullcone6
+
+uci -q delete firewall.@defaults[0].flow_offloading
+uci -q delete firewall.@defaults[0].flow_offloading_hw
+
 #  - wan 区域 input=REJECT / forward=REJECT / output=ACCEPT
 # 这是防止 WAN 侧入站的纵深防御措施，保持上游默认即可。
 # 防止代理降速 必要操作
@@ -326,7 +336,7 @@ uci commit luci
 # 7. ttyd / dropbear 的监听范围
 # =========================================================
 # 原实现这里有两行，把网页终端与 SSH 的监听范围**放开到所有接口**：
-#     uci delete ttyd.@ttyd[0].interface            # 删掉 ttyd 的 interface 限制
+#     uci -q deleteete ttyd.@ttyd[0].interface            # 删掉 ttyd 的 interface 限制
 #     uci set dropbear.@dropbear[0].Interface=''    # 清空 dropbear 的 Interface
 # 现已**注释掉**：本机只做局域网管理，不需要从其他接口访问，保持上游默认更严格。
 #
@@ -343,7 +353,7 @@ uci commit luci
 # 「纵深防御」：即便将来误放开防火墙，这两个服务也不会监听在 WAN 侧。
 #
 # 如需临时从其他接口访问（例如从 WAN 侧调试），取消下面两行注释即可：
-# uci delete ttyd.@ttyd[0].interface
+# uci -q deleteete ttyd.@ttyd[0].interface
 # uci set dropbear.@dropbear[0].Interface=''
 
 # 兜底提交（本节已无待提交项，保留以防日后在此处新增设置时漏 commit）
