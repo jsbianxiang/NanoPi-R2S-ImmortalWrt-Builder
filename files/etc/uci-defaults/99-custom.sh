@@ -300,7 +300,7 @@ uci commit dhcp
 # =========================================================
 # 区域（zone）策略**不动**：完全沿用 firewall4 官方默认
 # （lan 全 ACCEPT；wan 入站 REJECT / 转发 DROP / masq），详见 README「WAN 入站防火墙」。
-# 下面只做三项。
+# 下面只做四项。
 
 # [等价] SYN-flood 保护的选项改名迁移。
 #   LuCI 保存「防火墙 → 常规设置」时会把旧名 syn_flood 换成新名 synflood_protect
@@ -311,8 +311,17 @@ uci -q delete firewall.@defaults[0].syn_flood
 uci set firewall.@defaults[0].synflood_protect='1'
 
 # [等价] fullcone6 原本就是 '0'（关闭），删掉后仍为关闭（未设即关闭）。
-#   fullcone 本身（'1'，ImmortalWrt 为 firewall4 打过 fullcone 补丁）保持不变。
 uci -q delete firewall.@defaults[0].fullcone6
+
+# [生效] 关闭 IPv4 fullcone（全锥形 NAT）。
+#   `fullcone` 默认 '1'，由 ImmortalWrt 为 firewall4 打的 fullcone 补丁注入到 @defaults
+#   （该补丁同时注入 flow_offloading 1 / flow_offloading_hw 1 / fullcone 1 / fullcone6 0）。
+#   与 flow_offloading 同理：官方配置里写 '1'、fw4 默认是关，删掉即关闭、退回标准 masquerade。
+#   关闭原因：本机 R2S 的 IPv4 WAN 处于**双 NAT**（上游又是一层 NAT），上游多为 symmetric NAT，
+#   会把这一层的 fullcone 收益抵消 —— 对公网可达性无实益，且是更宽松的入向映射；关掉更保守、
+#   也更接近 stock OpenWrt。若日后 WAN 拿到公网 IP，可在 LuCI「网络 → 防火墙 → 常规设置」
+#   把「全锥形 NAT」改回「启用」。
+uci -q delete firewall.@defaults[0].fullcone
 
 # [已移除] 曾有一段「按 name 匹配 9 条默认通信规则、删除非法 enabled 值」的存量修复
 #   （针对更早版本 `uci set "firewall.@rule[N].enabled='1'"` 双引号包单引号写入的带引号脏值
