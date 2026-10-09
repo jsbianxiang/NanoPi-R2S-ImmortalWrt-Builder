@@ -133,7 +133,7 @@ GMAC，由内核直接支持。
 | --- | --- | --- | --- |
 | 网络 | `network.globals.packet_steering='1'` | `[等价]` | 数据包引导。消费该值的 `packet-steering.uc` **只特判 `'0'`（关闭）与 `'2'`（全部 CPU）**，`'1'` 与「未设」走同一套默认算法，故等于不写。官方 `99-default-settings` 只为 bcm4908 / bcm53xx / ramips-mt7621 / x86 写入该项（rockchip 默认即「未设」） |
 | 网络 | LAN / WAN 地址改用 CIDR 列表记法 | `[等价]` | 用 `list ipaddr '192.168.2.1/24'` 取代 `ipaddr` + `netmask`，netifd 从前缀长度推掩码 |
-| 网络 | 曾为 `lan` / `wan` / `wan6` 写 `multipath='off'` | `[已移除]` | MPTCP（RFC 8684）开关，现已删除。**三个原因**：① 写法把**字面单引号**写进值（`uci set "…multipath='off'"` 落盘为 `'off'`，与旧版 `enabled='1'` 同源缺陷）；② 上游 LuCI 提交 `317ff9dd76`（2026-04-25）已把「关闭」的表示从 `off` 改成**空串**，理由正是「`off` 与不写等价，写空串避免无谓写 flash」，本段写的正是刚被废弃的字面量；③ 该选项需配合 `network.globals.multipath=enable` 才起作用，本固件不设（保持官方默认＝MPTCP 全局未启用），故纯属冗余。另经检索 `openwrt/netifd` 全库 `multipath` / `mptcp` **均 0 处命中**，真正消费它的是 LuCI 生成路由表的扩展机制，单写一个孤儿选项无任何效果 |
+| 网络 | 为 `lan` / `wan` / `wan6` 写 `multipath='off'` | `[等价]` | MPTCP（RFC 8684）每接口开关。本固件不设 `network.globals.multipath`（MPTCP 全局未启用），且 `multipath` 并非 netifd 选项（`openwrt/netifd` 全库 `multipath`/`mptcp` **0 命中**），故这行与「不写」等价，仅作防御性显式默认值（日后若开全局 MPTCP，接口不会自动 multipath）。⚠ 上游 LuCI 提交 `317ff9dd76`（2026-04-25）已将「关闭」的表示改空串 `''`，此处沿用 `off` 仅为与旧设备 `uci show` 形态一致 |
 | 网络 | `wan6.norelease='1'` | `[生效]` | 重启时不发 DHCPv6 RELEASE（odhcp6c `-k`），降低上级回收地址导致**前缀变化**的概率。未设时 odhcp6c 会带 `-R`（退出时发 RELEASE），故这是真变更 |
 | 网络 | `wan` / `wan6` 的 `sendclientid='auto'` | `[等价]` | DHCP 客户端标识取「自动」。`dhcp.sh` 与 `dhcpv6.sh` 的 `case` 都是 `auto\|*)` **合并分支** —— 「未设」落进 `*)`，与 `auto` 走同一段代码，等于不写 |
 | DHCP | 删除 `dhcp.lan.ra_slaac`、`dhcp.lan.dhcpv6` | `[等价]` | odhcpd 的默认值本就是 `ra_slaac=true`、`dhcpv6=disabled`，删除后行为不变。**⚠ 删 `ra_slaac` 并不能关闭 SLAAC**，要关必须显式写 `ra_slaac='0'` |
@@ -143,12 +143,10 @@ GMAC，由内核直接支持。
 | DHCP | 删除 `dnsmasq.dns_redirect` | `[生效]` | **ImmortalWrt 特有**选项（上游 OpenWrt 没有）。置 1 时 dnsmasq 会插入 nft 规则把**所有过路 UDP/53** 劫持到本机（规则注释 `DNSMASQ HIJACK`），与 Clashoo 自己接管 DNS 的行为冲突，故关闭 |
 | 防火墙 | `syn_flood` → `synflood_protect='1'` | `[等价]` | 选项改名迁移（LuCI 保存该页时即如此），SYN-flood 保护保持**开启** |
 | 防火墙 | 删除 `fullcone6` | `[等价]` | 原本就是关闭（未设即关闭） |
-| 防火墙 | 清理 9 条默认通信规则上的**非法 `enabled` 值** | `[生效]` | **修历史脏数据**。旧版脚本用 `uci -q set "…enabled='1'"` 把**含字面单引号的 `'1'`** 写进了配置（`uci set` 不解析引号），fw4 解析该布尔值失败 → 报 `skipped due to invalid options` → **整条规则段被丢弃**，`Allow-Ping` / `Allow-DHCPv6` / `Allow-ICMPv6-*` 等**全部失效**。现按 `name` 匹配、只清非法值（删掉即回落 fw4 默认「启用」），不再写入 `enabled` |
 | 防火墙 | 删除 `flow_offloading` / `flow_offloading_hw` | `[生效]` | **关闭流量卸载**。fw4 的默认值是 0（官方配置里写的 `'1'` 才是开启），删除即关闭；flow offload 会让首包之后的流量走 fast path **绕过 netfilter 钩子**，与 Clashoo 这类 TPROXY 透明代理冲突 |
 
-> **小结：首启真正改变行为的只有 4 项** —— `wan6.norelease='1'`、
-> 关闭 DNS 劫持（删 `dns_redirect`）、关闭流量卸载（删 `flow_offloading*`）、
-> 以及**清理 9 条默认通信规则上的非法 `enabled` 值**（修复旧版本写入的脏数据）；
+> **小结：首启真正改变行为的只有 3 项** —— `wan6.norelease='1'`、
+> 关闭 DNS 劫持（删 `dns_redirect`）、关闭流量卸载（删 `flow_offloading*`）；
 > 其余全部是写法归一化。
 >
 > 各项的判断依据均取自上游源码（odhcpd `src/config.c`、`dnsmasq.init`、
