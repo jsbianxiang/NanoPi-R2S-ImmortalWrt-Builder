@@ -310,25 +310,12 @@ uci commit dhcp
 #   若日后 WAN 拿到公网 IP 想恢复防护，在 LuCI「网络 → 防火墙 → 常规设置」勾选 SYN-flood
 #   防护即可。）
 uci -q delete firewall.@defaults[0].syn_flood
+uci set firewall.@defaults[0].synflood_protect='1'
+
 
 # [等价] fullcone6 原本就是 '0'（关闭），删掉后仍为关闭（未设即关闭）。
 uci -q delete firewall.@defaults[0].fullcone6
 
-# [生效] 关闭 IPv4 fullcone（全锥形 NAT）。
-#   `fullcone` 默认 '1'，由 ImmortalWrt 为 firewall4 打的 fullcone 补丁注入到 @defaults
-#   （该补丁同时注入 flow_offloading 1 / flow_offloading_hw 1 / fullcone 1 / fullcone6 0）。
-#   与 flow_offloading 同理：官方配置里写 '1'、fw4 默认是关，删掉即关闭、退回标准 masquerade。
-#   关闭原因：本机 R2S 的 IPv4 WAN 处于**双 NAT**（上游又是一层 NAT），上游多为 symmetric NAT，
-#   会把这一层的 fullcone 收益抵消 —— 对公网可达性无实益，且是更宽松的入向映射；关掉更保守、
-#   也更接近 stock OpenWrt。若日后 WAN 拿到公网 IP，可在 LuCI「网络 → 防火墙 → 常规设置」
-#   把「全锥形 NAT」改回「启用」。
-uci -q delete firewall.@defaults[0].fullcone
-
-# [已移除] 曾有一段「按 name 匹配 9 条默认通信规则、删除非法 enabled 值」的存量修复
-#   （针对更早版本 `uci set "firewall.@rule[N].enabled='1'"` 双引号包单引号写入的带引号脏值
-#   '1' —— 该写法会让 fw4 丢弃整条规则）。该带引号的坏写法早已移除，当前固件不再产生
-#   脏值，且所有默认规则保持官方默认（无 enabled 字段即 fw4 默认「启用」），故该修复段已删除、
-#   回归官方逻辑；勿再从上游合回。
 
 # [生效] 关闭流量卸载（软件 + 硬件）。
 #   官方默认配置里这两项是 '1'（开启），而 fw4 的默认值是 0
