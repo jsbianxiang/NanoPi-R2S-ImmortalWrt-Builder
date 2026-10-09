@@ -299,36 +299,6 @@ uci commit dhcp
 # 5. 防火墙
 # =========================================================
 # 区域（zone）策略**不动**：完全沿用 firewall4 官方默认
-# （lan 全 ACCEPT；wan 入站 REJECT / 转发 DROP / masq），详见 README「WAN 入站防火墙」。
-# 下面只做四项。
-
-# [生效] 关闭 SYN-flood 防护（SYN cookies + WAN 侧新连接限速）。
-#   fw4 的 `synflood_protect` 无默认值（unset 即关），保护是靠**出厂** `/etc/config/firewall`
-#   的 `option syn_flood 1`（旧名）打开的。本机 R2S 的 IPv4 WAN 处于双 NAT，对外不直接暴露、
-#   几乎无 SYN flood 风险，关闭亦无副作用，故删掉出厂的 `syn_flood` 让其回落 fw4 默认「关」。
-#   （与 fullcone 同理：双 NAT 下这类「抗公网攻击 / 提升公网可达性」的特性都无实益；
-#   若日后 WAN 拿到公网 IP 想恢复防护，在 LuCI「网络 → 防火墙 → 常规设置」勾选 SYN-flood
-#   防护即可。）
-uci -q delete firewall.@defaults[0].syn_flood
-uci set firewall.@defaults[0].synflood_protect='1'
-
-
-# [等价] fullcone6 原本就是 '0'（关闭），删掉后仍为关闭（未设即关闭）。
-uci -q delete firewall.@defaults[0].fullcone6
-
-
-# [生效] 关闭流量卸载（软件 + 硬件）。
-#   官方默认配置里这两项是 '1'（开启），而 fw4 的默认值是 0
-#   （firewall4 root/usr/share/ucode/fw4.uc: `flow_offloading: [ "bool", "0" ]`），
-#   即「删掉」就等于关闭。
-#   关闭原因：flow offload 会让「首包之后」的流量走 fast path 绕过 netfilter 钩子，
-#   与 Clashoo 这类基于 TPROXY 的透明代理冲突（表现为代理时通时不通）。
-#   将来不再用代理插件时，可在 LuCI「网络 → 防火墙 → 常规设置 → 流量卸载类型」
-#   改回「软件流量卸载」。
-uci -q delete firewall.@defaults[0].flow_offloading
-uci -q delete firewall.@defaults[0].flow_offloading_hw
-
-uci commit firewall
 
 # =========================================================
 # 6. 默认主题
