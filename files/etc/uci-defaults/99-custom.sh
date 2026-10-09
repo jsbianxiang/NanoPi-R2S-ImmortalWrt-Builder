@@ -299,6 +299,14 @@ uci commit dhcp
 # 5. 防火墙
 # =========================================================
 # 区域（zone）策略**不动**：完全沿用 firewall4 官方默认
+#  - wan 区域 input=REJECT / forward=REJECT / output=ACCEPT
+# 这是防止 WAN 侧入站的纵深防御措施，保持上游默认即可。
+# 防止代理降速 必要操作
+uci set firewall.@zone[1].input='REJECT'
+uci set firewall.@zone[1].output='ACCEPT'
+uci set firewall.@zone[1].forward='REJECT'
+
+uci commit firewall
 
 # =========================================================
 # 6. 默认主题
