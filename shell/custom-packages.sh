@@ -45,7 +45,7 @@
 #   否则 make image 会因找不到包而失败。
 # =============================================================================
 # 【当前已启用】Clashoo —— ⚠ 与 nikki 配置冲突，不可同时启用
-CUSTOM_PACKAGES="$CUSTOM_PACKAGES clashoo luci-app-clashoo luci-i18n-clashoo-zh-cn"
+#CUSTOM_PACKAGES="$CUSTOM_PACKAGES clashoo luci-app-clashoo luci-i18n-clashoo-zh-cn"
 
 # -----------------------------------------------------------------------------
 # 1.2 其他第三方插件（可选；⚠ 代理类互斥，只能选一个）
@@ -58,7 +58,7 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES clashoo luci-app-clashoo luci-i18n-clashoo-zh-
 # PassWall2
 #CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-passwall2 geoview xray-core sing-box hysteria kmod-nft-tproxy kmod-nft-socket"
 # nikki（核心包名就叫 nikki）—— ⚠ 与 Clashoo 配置冲突，不可同时启用
-#CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-nikki nikki kmod-tun kmod-inet-diag kmod-nft-tproxy kmod-nft-socket"
+CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-nikki nikki kmod-tun kmod-inet-diag kmod-nft-tproxy kmod-nft-socket"
 #
 # OpenClash 不列在这里，它在「二」2.2（内核由 rockchip/build.sh 处理）。
 
