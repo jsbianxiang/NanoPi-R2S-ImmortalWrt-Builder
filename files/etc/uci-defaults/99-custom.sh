@@ -301,20 +301,10 @@ uci commit dhcp
 
 # 区域（zone）策略**按需修改**：其余沿用 firewall4 官方默认
 
-uci -q delete firewall.@defaults[0].syn_flood
-uci set firewall.@defaults[0].synflood_protect
-uci -q delete firewall.@defaults[0].fullcone
-uci -q delete firewall.@defaults[0].fullcone6
-
 uci -q delete firewall.@defaults[0].flow_offloading
 uci -q delete firewall.@defaults[0].flow_offloading_hw
 
-#  - wan 区域 input=REJECT / forward=REJECT / output=ACCEPT
-# 这是防止 WAN 侧入站的纵深防御措施，保持上游默认即可。
-# 防止代理降速 必要操作
-uci set firewall.@zone[1].input='REJECT'
-uci set firewall.@zone[1].output='ACCEPT'
-uci set firewall.@zone[1].forward='REJECT'
+
 
 uci commit firewall
 
