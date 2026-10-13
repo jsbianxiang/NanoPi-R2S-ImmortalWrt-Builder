@@ -253,6 +253,10 @@ v2ray dae homeproxy hysteria trojan brook naive singbox sing-box nekobox honk pr
 # dnscrypt-proxy2、ikoolproxy、haproxy-tcp、https-dns-proxy）/ 非接管的显式
 # 代理（tinyproxy 是 HTTP 正向代理，只监听端口供客户端显式指定，不写
 # nftables/TPROXY 规则）—— 免得兜底提示自相矛盾、喊狼来了。
+# ⚠ 后两项（https-dns-proxy / tinyproxy）来自 **ImmortalWrt 官方源**，不在
+#   dllkids 里（实测 25.12.2 luci feed：26.236.50544~cb5d434 / 2026.05.06-r1）。
+#   它们经 shell/custom-packages.sh 的短名清单进入 $PACKAGES，同样会被下面的
+#   关键词启发式扫到，所以照样要留在白名单里。
 _PROXY_OK="luci-app-xray-status
 luci-app-ssrserver-python luci-app-ssr-mudb-server luci-app-v2ray-server
 luci-app-dnscrypt-proxy2 luci-app-dnsproxy luci-app-ikoolproxy luci-app-haproxy-tcp

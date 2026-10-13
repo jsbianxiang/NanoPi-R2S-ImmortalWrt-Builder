@@ -292,6 +292,13 @@ dllkids 源里所有**透明代理接管型**插件都只能启用**一个**。�
 
 > 以上 `luci-app-*` 与 `rockchip/build.sh` 里的 `_PROXY_OK` 白名单**逐项对应**
 > （它们会命中兜底关键词，但已知不接管透明代理，故显式排除）。
+>
+> 注：`luci-app-tinyproxy` 与 `luci-app-https-dns-proxy` 来自 **ImmortalWrt 官方源**，
+> **不在 dllkids 里**（实测 25.12.2 luci feed：`26.236.50544~cb5d434` /
+> `2026.05.06-r1`）。它们经 `shell/custom-packages.sh` 的短名清单
+> （`tinyproxy` / `https-dns-proxy`）进入 `PACKAGES`，同样会被兜底关键词扫到，
+> 所以照样要留在白名单里。本表其余条目也大多是官方源包，本表是
+> 「**不冲突清单**」而非「dllkids 库存清单」。
 
 **换栈三步走**（改 `shell/custom-packages.sh`）：
 
