@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       keep_days:
-        description: "保留最近多少天（默认 1）。⚠️ 删除运行记录会连带删除该次运行的 Artifact（即构建产物归档），想留档请先把 keep_days 调大"
+        description: "保留最近多少天（默认 90，与构建产物 Artifact 的 90 天保留期对齐）。⚠️ 删除运行记录会连带删除该次运行的 Artifact（构建产物归档）；设为小于 90 会提前销毁尚未自然过期的归档"
         required: false
-        default: "1"
+        default: "90"
 
 jobs:
   cleanup:
@@ -25,7 +25,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           KEEP_DAYS: ${{ inputs.keep_days }}
         run: |
-          : "${KEEP_DAYS:=1}"
+          : "${KEEP_DAYS:=90}"
           THRESHOLD="$(date -u -d "${KEEP_DAYS} days ago" '+%Y-%m-%dT%H:%M:%SZ')"
           echo "阈值时间(UTC)：$THRESHOLD"
 

@@ -32,9 +32,16 @@
 #      ⚠ 判定是**整词**匹配，故 luci-app-passwall2 ≠ luci-app-passwall、
 #        luci-app-xray-status 是 luci-app-xray 的配套状态页（不算独立栈，可共存）。
 #      ✅ 不算冲突（可共存）：luci-app-xray-status / microsocks / gost /
-#        softethervpn / luci-app-ssrserver-python / luci-app-v2ray-server /
-#        tun2socks / smartdns / mosdns / chinadns-ng / adguardhome / dnsproxy /
-#        dnscrypt-proxy2 / ikoolproxy / haproxy-tcp / geoview。
+#        softethervpn / luci-app-ssrserver-python / luci-app-ssr-mudb-server /
+#        luci-app-v2ray-server / tun2socks / smartdns / mosdns / chinadns-ng /
+#        adguardhome / luci-app-dnsproxy / luci-app-dnscrypt-proxy2 /
+#        luci-app-ikoolproxy / luci-app-haproxy-tcp / luci-app-https-dns-proxy /
+#        luci-app-tinyproxy / geoview。
+#        （LuCI 应用一律写**全名** luci-app-*，与 rockchip/build.sh 的 _PROXY_OK
+#          白名单、README「不算冲突」表口径一致；microsocks / gost / smartdns /
+#          mosdns / chinadns-ng / adguardhome / geoview 等本身就是独立包名，
+#          不存在 luci-app- 形式。后两个 LuCI 项是 DNS 层与显式正向代理，
+#          不接管透明流量。）
 #   3. 本分支不集成 store / istore，故不提供依赖 istore 的插件选项。
 #   4. 硬路由 / 小闪存设备请酌情启用；包过多会导致固件过大或构建失败。
 #   5. 「三」的短名已对 ImmortalWrt 25.12 官方源（aarch64_generic，共 11428 个包）

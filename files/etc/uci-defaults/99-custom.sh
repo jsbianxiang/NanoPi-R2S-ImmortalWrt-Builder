@@ -142,7 +142,20 @@ esac
 # 官方 /bin/config_generate 在 proto=dhcp 时已自动生成
 #   network.wan6 = interface, device=eth0, proto=dhcpv6
 # 向光猫请求 IPv6 地址与 PD 前缀（供下游 LAN 下发 IPv6），故 IPv6 双栈不受影响。
-# 如需调整（例如加 norelease 以减少重启后前缀变化），请自行在 LuCI 或此处追加。
+#
+# ⚠ 已知后果（刻意保持官方行为，2026-10-14 与用户确认后决定不补）：
+#   官方 config_generate 的 `case "$protocol"` 里，wan6 **只在 dhcp / pppoe 分支**
+#   生成（static 分支只写 wan.ipaddr 与 ip6assign），所以当 wan_proto=static 时：
+#     · WAN 没有 wan6 ⇒ 拿不到 IPv6 地址，也没有 PD 前缀；
+#     · 下游 LAN 由 odhcpd 下发的 IPv6 只能靠 ULA（network.globals.ula_prefix），
+#       没有公网 IPv6。
+#   静态接入又需要 IPv6 双栈时，请刷机后自行在 LuCI「网络 → 接口」添加 wan6
+#   （协议 DHCPv6、设备 eth0），或在本文件末尾追加下面三行后 uci commit network：
+#       uci set network.wan6=interface
+#       uci set network.wan6.device='eth0'
+#       uci set network.wan6.proto='dhcpv6'
+#   （reqaddress / reqprefix 不写即为 netifd 默认 try / auto，等价于官方 dhcp 分支。）
+#   另：如需「重启后前缀尽量不变」，可再加 uci set network.wan6.norelease='1'。
 
 # =========================================================
 # 2. LAN 管理地址

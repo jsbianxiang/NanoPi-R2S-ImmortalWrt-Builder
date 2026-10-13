@@ -58,7 +58,7 @@ if [ -z "$CUSTOM_PACKAGES" ]; then
   echo "⚪️ 未选择 任何第三方软件包"
 fi
 # 本分支不克隆任何第三方插件仓库（不集成 store / istore 商店）。
-# 第三方包统一由下方注入的 Clashoo 源提供。
+# 第三方包统一由下方注入的 dllkids（kenzok8）源提供。
 
 # 输出调试信息
 echo "$(date '+%Y-%m-%d %H:%M:%S') - 开始构建固件..."
@@ -236,14 +236,27 @@ fi
 # 靠人工维护 _PROXY_STACKS 必然滞后（那次审计就发现漏了 8 套）。所以再扫一遍
 # 已选包：凡 luci-app-* 命中代理关键词、又不在已知表里的，提示一下，由人判断
 # 要不要补进 _PROXY_STACKS。刻意不 exit 1，避免误伤非代理包。
+#
+# ⚠ 已知盲区（有意保留，不做自动扫描）：
+#   本启发式只扫 `luci-app-*` 前缀的包。代理栈里有若干是**纯名**包（不带
+#   luci-app- 前缀）—— nikki / honk / daed / dae / v2raya / clashoo / mihomo …
+#   它们**已在 _PROXY_STACKS 表里**，硬校验覆盖得到，所以漏不掉；但将来若源里
+#   出现**新的纯名**代理前端，这里不会给出提示，需要人工发现并补表。
+#   之所以不顺手对纯名包也扫一遍关键词：纯名空间里误报面大得多 ——
+#   dnscrypt-proxy2 / https-dns-proxy / tinyproxy / ikoolproxy / dnsproxy /
+#   haproxy-tcp 这些**非接管型**包名同样含 "proxy"，会被一并喊成「疑似代理类」，
+#   反而把白名单拖进来说不清、降低这个提示的可信度。宁可少喊，不可乱喊。
 _PROXY_KW="clash mihomo homo nikki passwall ssr shadowsocks redsocks xray xjay
 v2ray dae homeproxy hysteria trojan brook naive singbox sing-box nekobox honk proxy"
 # 白名单：命中关键词但**已知不属于接管型**的包，与 README「不算冲突」名单对应。
-# 三类：状态页（xray-status）/ 服务端（*-server）/ DNS 与过滤层（dnsproxy、
-# dnscrypt-proxy2、ikoolproxy、haproxy-tcp）—— 免得兜底提示自相矛盾、喊狼来了。
+# 四类：状态页（xray-status）/ 服务端（*-server）/ DNS 与过滤层（dnsproxy、
+# dnscrypt-proxy2、ikoolproxy、haproxy-tcp、https-dns-proxy）/ 非接管的显式
+# 代理（tinyproxy 是 HTTP 正向代理，只监听端口供客户端显式指定，不写
+# nftables/TPROXY 规则）—— 免得兜底提示自相矛盾、喊狼来了。
 _PROXY_OK="luci-app-xray-status
 luci-app-ssrserver-python luci-app-ssr-mudb-server luci-app-v2ray-server
-luci-app-dnscrypt-proxy2 luci-app-dnsproxy luci-app-ikoolproxy luci-app-haproxy-tcp"
+luci-app-dnscrypt-proxy2 luci-app-dnsproxy luci-app-ikoolproxy luci-app-haproxy-tcp
+luci-app-https-dns-proxy luci-app-tinyproxy"
 _PROXY_SUS=""
 for _p in $PACKAGES; do
     case "$_p" in luci-app-*) ;; *) continue ;; esac
@@ -338,38 +351,38 @@ else
 fi
 
 # =========================================================
-# 注入 Clashoo（kenzok8）第三方 APK 源
+# 注入 dllkids（kenzok8）第三方 APK 源
 # =========================================================
 #
 # 官方 Image Builder 的 repositories 只包含 ImmortalWrt 官方源，
-# 不含 Clashoo。这里在 make image 之前把 Clashoo 的 APK 源与
+# 不含 dllkids。这里在 make image 之前把 dllkids 的 APK 源与
 # 签名公钥注入 Image Builder 根目录。
 #
 # 重要：
 #   imm.config 启用了 CONFIG_SIGNATURE_CHECK=y，
 #   因此 apk 会校验源签名 —— 必须提供公钥，
-#   否则安装 Clashoo 时会报 "UNTRUSTED signature"。
+#   否则安装 dllkids 源里的包时会报 "UNTRUSTED signature"。
 #
 # 说明：
-#   - 内核为官方原版（路线 C），Clashoo 依赖的 kmod
+#   - 内核为官方原版（路线 C），dllkids 源里的包所依赖的 kmod
 #     (kmod-tun / kmod-nft-tproxy 等) 由官方 kmods 源解析；
-#   - Clashoo 包本体为纯用户态，不受内核 ABI 影响。
+#   - 代理类包本体为纯用户态，不受内核 ABI 影响。
 # =========================================================
 
-CLASHOO_FEED="https://down.dllkids.xyz/openwrt-feed/25.12/aarch64_generic/packages.adb"
-CLASHOO_KEY_URL="https://down.dllkids.xyz/openwrt-feed/keys/dllkids-feed.pub.pem"
+DLLKIDS_FEED="https://down.dllkids.xyz/openwrt-feed/25.12/aarch64_generic/packages.adb"
+DLLKIDS_KEY_URL="https://down.dllkids.xyz/openwrt-feed/keys/dllkids-feed.pub.pem"
 
-echo "==> 注入 Clashoo APK 源..."
+echo "==> 注入 dllkids APK 源..."
 
-grep -qxF "$CLASHOO_FEED" repositories 2>/dev/null || echo "$CLASHOO_FEED" >> repositories
+grep -qxF "$DLLKIDS_FEED" repositories 2>/dev/null || echo "$DLLKIDS_FEED" >> repositories
 
 mkdir -p keys
 if command -v curl >/dev/null 2>&1; then
-    curl -fsSL "$CLASHOO_KEY_URL" -o keys/dllkids-feed.pub.pem
+    curl -fsSL "$DLLKIDS_KEY_URL" -o keys/dllkids-feed.pub.pem
 elif command -v wget >/dev/null 2>&1; then
-    wget -q -O keys/dllkids-feed.pub.pem "$CLASHOO_KEY_URL"
+    wget -q -O keys/dllkids-feed.pub.pem "$DLLKIDS_KEY_URL"
 else
-    echo "ERROR: 缺少 curl/wget，无法下载 Clashoo 签名公钥" >&2
+    echo "ERROR: 缺少 curl/wget，无法下载 dllkids 签名公钥" >&2
     exit 1
 fi
 
@@ -379,7 +392,7 @@ echo "---- keys ----"
 ls -l keys
 
 # =========================================================
-# 让固件也带上该源与公钥，使设备端可以直接 apk add / apk upgrade Clashoo 系包
+# 让固件也带上该源与公钥，使设备端可以直接 apk add / apk upgrade dllkids 源里的包
 # =========================================================
 # 上面注入的 repositories / keys 只用于【构建期】：Image Builder 不会把它们
 # 拷贝进固件根文件系统（固件的 distfeeds.list 来自官方预编译的 base-files）。
@@ -398,7 +411,7 @@ cat > files/etc/apk/repositories.d/customfeeds.list <<EOF
 # add your custom package feeds here
 #
 # http://www.example.com/path/to/files/packages.adb
-$CLASHOO_FEED
+$DLLKIDS_FEED
 EOF
 
 cp -f keys/dllkids-feed.pub.pem files/etc/apk/keys/dllkids-feed.pub.pem

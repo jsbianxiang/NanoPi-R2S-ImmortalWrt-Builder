@@ -9,7 +9,7 @@ name: Build R2S ImmortalWrt 25.12.x
 #   - 不集成 store / istore 商店
 #   - 不克隆任何第三方插件仓库
 #   - 不使用 PPPoE 拨号
-# 第三方包仅来自 build.sh 中注入的 Clashoo 源（down.dllkids.xyz）。
+# 第三方包仅来自 build.sh 中注入的 dllkids（kenzok8）源（down.dllkids.xyz）。
 #
 # 网络模型：R2S 的 WAN 口接上级设备，默认采用【DHCP】接入（与 ImmortalWrt 官方
 #          默认一致）；如需固定地址，把 wan_proto 选为 static 改为静态 IP 接入。
@@ -89,7 +89,7 @@ jobs:
       - name: Set executable permissions
         run: chmod +x ${{ github.workspace }}/rockchip/build.sh
 
-      - name: Save Custom Router IP into OpenWrt files
+      - name: Save Custom Router IP into ImmortalWrt files
         run: |
           mkdir -p "${{ github.workspace }}/custom"
           echo "${{ inputs.custom_router_ip }}" > "${{ github.workspace }}/custom/custom_router_ip.txt"
@@ -155,8 +155,12 @@ jobs:
         run: |
           if [[ "${{ inputs.wan_proto }}" == "static" ]]; then
             WAN_LINE="- 🌐 **WAN 接入**: 静态 IP ${{ inputs.wan_ip }} / 网关 ${{ inputs.wan_gateway }}"
+            # 官方 config_generate 只在 dhcp / pppoe 分支生成 wan6，static 分支不生成，
+            # 故静态接入时 WAN 无 IPv6（本分支刻意保持官方行为，不补 wan6）。
+            WAN6_LINE="- 🧬 **WAN6**: ⚠️ 静态接入下不生成 wan6，WAN 无 IPv6（如需请刷机后在 LuCI 手动添加 wan6：DHCPv6 / eth0）"
           else
             WAN_LINE="- 🌐 **WAN 接入**: DHCP（由上级设备自动分配地址）"
+            WAN6_LINE="- 🧬 **WAN6**: DHCPv6（用于获取 PD 前缀）"
           fi
           BUILD_TIME="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           cat > ${{ github.workspace }}/router-info.md <<EOF
@@ -166,10 +170,10 @@ jobs:
           - 🏷️ **Image Builder 版本**: ImmortalWrt ${{ inputs.luci_version }}
           - 🏠 **后台地址**: ${{ inputs.custom_router_ip }}
           ${WAN_LINE}
-          - 🧬 **WAN6**: DHCPv6（用于获取 PD 前缀）
+          ${WAN6_LINE}
           - 👤 **用户名**: root
           - 🔑 **密码**: 无
-          - 🔖 **构建提交**: ${{ github.sha }}
+          - 🔖 **构建提交**: [${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})
           - 🔢 **构建序号**: #${{ github.run_number }}
           - 🕒 **构建时间**: ${BUILD_TIME}
 

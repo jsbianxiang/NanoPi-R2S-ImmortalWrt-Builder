@@ -24,7 +24,9 @@ NanoPi R2S 专用：基于 GitHub Actions + ImmortalWrt 官方 Image Builder 的
 机型已固定在工作流的 `env.PROFILE` 中，**不再提供机型下拉选择**。
 
 > 本仓库**只支持 ImmortalWrt 25.12.x（apk 包管理）**，
-> 已移除全部 24.10 / opkg 相关代码与配置。
+> 不含 24.10 / opkg 相关的包与配置。构建配置 `rockchip/imm.config` 里那一行
+> `# CONFIG_PACKAGE_opkg is not set` 是配置生成器产出的**显式关闭**项（表示
+> 「不安装 opkg」），属正常内容，不是残留。
 
 ---
 
@@ -98,6 +100,12 @@ NanoPi R2S 专用：基于 GitHub Actions + ImmortalWrt 官方 Image Builder 的
   而 netifd 的 `dhcpv6.sh` 里是
   `[ -z "$reqprefix" -o "$reqprefix" = "auto" ] && reqprefix=0`，
   即「未设」与 `auto` 完全等价（请求任意长度前缀），故实际行为与显式写 `auto` 相同。
+  > ⚠️ **以上仅适用于 `wan_proto=dhcp`（默认）。** 官方 `config_generate` 的
+  > `case "$protocol"` 里 `wan6` **只在 `dhcp` / `pppoe` 分支生成**，`static`
+  > 分支不生成 ⇒ 选静态接入时 WAN 没有 IPv6，下游 LAN 也就拿不到 PD 前缀
+  > （只有 ULA）。这是**刻意保持官方行为**（本脚本不补 `wan6`）。
+  > 静态接入又需要 IPv6 双栈时，刷机后自行在 LuCI「网络 → 接口」添加 `wan6`
+  > （协议 DHCPv6、设备 `eth0`）。
 - **WAN 入站防火墙：采用 ImmortalWrt 25.12.x 官方镜像的策略（入站拒绝）**，
   不允许从 WAN 侧访问后台；刷机后请从 **LAN 口**访问。详见下文「WAN 入站防火墙」章节。
 - **网口（R2S 本体）**：`eth0` 为 WAN（默认 DHCP），`eth1` 为 LAN，
@@ -161,6 +169,8 @@ GMAC，由内核直接支持。
   该脚本在 **preinit_main** 阶段运行（`/lib/preinit/82_config_generate`，
   `boot_hook_add preinit_main do_config_generate`），**早于**本脚本，
   所以本脚本的 `uci set` 不会被它覆盖。
+  > ⚠️ 例外：官方只在 `dhcp` / `pppoe` 分支生成 `wan6`，**`static` 分支不生成**。
+  > 即选静态接入时 WAN 无 IPv6（详见上文「固件默认属性」里的同一条说明）。
 - **有意不写入的**：`packet_steering`、`multipath`、DHCP/DNS 各项
   （含 ImmortalWrt 特有的 `dns_redirect`）、防火墙（`fullcone` / `syn_flood` /
   `flow_offloading`）、默认主题、`ttyd` / `dropbear` 监听范围 ——
@@ -201,8 +211,8 @@ GMAC，由内核直接支持。
 `rockchip/build.sh` 在 `make image` 之前注入 dllkids（kenzok8）的 APK 源与签名公钥：
 
 ```sh
-CLASHOO_FEED="https://down.dllkids.xyz/openwrt-feed/25.12/aarch64_generic/packages.adb"
-CLASHOO_KEY_URL="https://down.dllkids.xyz/openwrt-feed/keys/dllkids-feed.pub.pem"
+DLLKIDS_FEED="https://down.dllkids.xyz/openwrt-feed/25.12/aarch64_generic/packages.adb"
+DLLKIDS_KEY_URL="https://down.dllkids.xyz/openwrt-feed/keys/dllkids-feed.pub.pem"
 ```
 
 > - `aarch64_generic` 必须与目标的 `ARCH_PACKAGES` 一致，否则 apk 会以架构不符拒绝。
@@ -243,7 +253,7 @@ dllkids 源里所有**透明代理接管型**插件都只能启用**一个**。�
 | PassWall2 | `luci-app-passwall2` |
 | SSR-Plus | `luci-app-ssr-plus` |
 | homeproxy | `luci-app-homeproxy` |
-| Daed 系 | `luci-app-dae` / `luci-app-daed` / `luci-app-daed-next` / `luci-app-daede` |
+| Daed 系 | `luci-app-dae` / `dae` / `luci-app-daed` / `daed` / `luci-app-daed-next` / `luci-app-daede` |
 | shadowsocks 系 | `luci-app-shadowsocks` / `luci-app-shadowsocks-libev` / `luci-app-shadowsocks-rust` |
 | redsocks 系 | `luci-app-redsocks` / `luci-app-redsocks2` |
 | domain-proxy | `luci-app-domain-proxy`（redsocks 的另一种前端：走 dnsmasq+ipset 域名分流） |
@@ -251,7 +261,7 @@ dllkids 源里所有**透明代理接管型**插件都只能启用**一个**。�
 | v2raya | `v2raya` |
 | ss-redir | `luci-app-ss-redir` |
 | nekobox | `luci-app-nekobox` |
-| honk | `luci-app-honk` |
+| honk | `luci-app-honk` / `honk` |
 | jederproxy | `luci-app-jederproxy` |
 | xjay | `luci-app-xjay` |
 | mproxy | `luci-app-mproxy` |
@@ -272,9 +282,12 @@ dllkids 源里所有**透明代理接管型**插件都只能启用**一个**。�
 - 状态页 / 服务端：`luci-app-xray-status`（xray 的配套状态页）、
   `luci-app-ssrserver-python` / `luci-app-ssr-mudb-server` / `luci-app-v2ray-server`、
   `microsocks` / `gost` / `softethervpn`、`tun2socks`（助手）
-- DNS 与过滤层：`luci-app-dnsproxy` / `luci-app-dnscrypt-proxy2`（DNS）、
-  `luci-app-ikoolproxy`（广告过滤）、`luci-app-haproxy-tcp`（负载均衡）、
+- DNS 与过滤层：`luci-app-dnsproxy` / `luci-app-dnscrypt-proxy2` /
+  `luci-app-https-dns-proxy`（DNS）、`luci-app-ikoolproxy`（广告过滤）、
+  `luci-app-haproxy-tcp`（负载均衡）、
   `smartdns` / `mosdns` / `chinadns-ng` / `adguardhome`
+- 非接管的显式代理：`luci-app-tinyproxy`（HTTP 正向代理，只监听端口供客户端
+  显式指定，不写 nftables/TPROXY 规则）
 - 数据包：`geoview` / `v2ray-geoip` / `v2ray-geosite`
 
 > 以上 `luci-app-*` 与 `rockchip/build.sh` 里的 `_PROXY_OK` 白名单**逐项对应**
