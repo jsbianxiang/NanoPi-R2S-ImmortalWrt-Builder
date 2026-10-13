@@ -92,22 +92,30 @@ NanoPi R2S 专用：基于 GitHub Actions + ImmortalWrt 官方 Image Builder 的
   如需固定地址，把工作流的 `wan_proto` 选为 `static`，再填写
   `wan_ip` / `wan_gateway` / `wan_dns`（默认 `192.168.1.2` / `192.168.1.1` / `192.168.1.1`）；
   此时请确保 `wan_ip` 与光猫处于同一网段（默认 `192.168.1.0/24`）且未被其他设备占用。
-- **WAN6：DHCPv6 客户端**，向光猫请求 IPv6 地址与 **PD 前缀**（`reqprefix=auto`），
-  供下游 LAN 分配 IPv6 使用。
+- **WAN6：DHCPv6 客户端**（由官方 `config_generate` 自动生成），向光猫请求 IPv6
+  地址与 **PD 前缀**，供下游 LAN 分配 IPv6 使用。
+  `99-custom.sh` **不设置** `wan6` 的任何选项 —— `reqprefix` 保持未设，
+  而 netifd 的 `dhcpv6.sh` 里是
+  `[ -z "$reqprefix" -o "$reqprefix" = "auto" ] && reqprefix=0`，
+  即「未设」与 `auto` 完全等价（请求任意长度前缀），故实际行为与显式写 `auto` 相同。
 - **WAN 入站防火墙：采用 ImmortalWrt 25.12.x 官方镜像的策略（入站拒绝）**，
   不允许从 WAN 侧访问后台；刷机后请从 **LAN 口**访问。详见下文「WAN 入站防火墙」章节。
 - **网口（R2S 本体）**：`eth0` 为 WAN（默认 DHCP），`eth1` 为 LAN，
   LAN 地址为工作流中填写的 `custom_router_ip`。对应关系见下节。
-- **默认主题：Bootstrap**。固件同时装了 Argon（可在 LuCI「系统 → 系统 → 语言和界面」
-  里切换），默认值由 `99-custom.sh` **显式指定** —— 两个主题各带一个
+- **默认主题：Argon**（ImmortalWrt 官方默认）。固件同时装了 Bootstrap，
+  可在 LuCI「系统 → 系统 → 语言和界面」里切换 —— 两个主题各带一个
   `/etc/uci-defaults/30_luci-theme-*` 脚本会争抢 `luci.main.mediaurlbase`，
   其中 Argon 那个是**无条件**改写、且按文件名字母序先于 Bootstrap 执行，
-  若不显式指定，默认主题会变成 Argon。
-- **网络 / DHCP / 防火墙的调优**（`wan6` 的 DHCPv6 行为、关闭 DNS 劫持、
-  关闭流量卸载等）同样由 `99-custom.sh` 在首启写入，
+  所以默认会落到 Argon。`99-custom.sh` **不干预**主题；
+  若想让默认变成 Bootstrap，在 `99-custom.sh` 末尾追加两行即可：
+  `uci set luci.main.mediaurlbase='/luci-static/bootstrap'` 与 `uci commit luci`。
+- **网络 / DHCP / 防火墙等一律保持 ImmortalWrt 官方镜像默认** ——
+  `99-custom.sh` **只写工作流传入的地址参数**（WAN 接入方式与 LAN 管理地址），
+  其余调优项（`packet_steering`、`multipath`、DHCP/DNS 各项、`fullcone`、
+  `syn_flood`、`flow_offloading` 等）**一律不做改动**，
   逐项说明见下文「首启初始化（`99-custom.sh`）」。
 - **网页终端 / SSH 只监听局域网**：`ttyd` 监听 `br-lan`、`dropbear` 监听 LAN 地址，
-  均保持上游默认 —— `99-custom.sh` **不再**把它们放开到所有接口。
+  均为上游默认，`99-custom.sh` 不干预。
 - 上述行为全部由 `files/etc/uci-defaults/99-custom.sh` 定义，可按需修改。
 
 ### R2S 网口对应关系（重要）
@@ -131,44 +139,40 @@ GMAC，由内核直接支持。
 ### 首启初始化（`99-custom.sh`）
 
 固件**首次启动**时由 `/etc/uci-defaults/99-custom.sh` 一次性写入下列配置
-（执行后该脚本自动删除）。标注 **`[生效]`** 的才是真正改变运行行为的项；
-**`[等价]`** 的只是 LuCI 的写法归一化（改记法，或删掉「已废弃 / 本来就等于
-该选项默认值」的项），语义与官方默认**完全一致** —— 写进来只为让首启后的
-`uci show` 与手工配置过的设备逐行一致，便于比对排障；
-**`[已移除]`** 的是曾经写入、后因「写法有缺陷 / 已被上游废弃 / 纯冗余」而删除的项。
+（执行后该脚本自动删除）。
 
-| 分类 | 项 | 类型 | 说明 |
-| --- | --- | --- | --- |
-| 网络 | `network.globals.packet_steering='1'` | `[等价]` | 数据包引导。消费该值的 `packet-steering.uc` **只特判 `'0'`（关闭）与 `'2'`（全部 CPU）**，`'1'` 与「未设」走同一套默认算法，故等于不写。官方 `99-default-settings` 只为 bcm4908 / bcm53xx / ramips-mt7621 / x86 写入该项（rockchip 默认即「未设」） |
-| 网络 | LAN / WAN 地址改用 CIDR 列表记法 | `[等价]` | 用 `list ipaddr '192.168.2.1/24'` 取代 `ipaddr` + `netmask`，netifd 从前缀长度推掩码 |
-| 网络 | 为 `lan` / `wan` / `wan6` 写 `multipath='off'` | `[等价]` | MPTCP（RFC 8684）每接口开关。本固件不设 `network.globals.multipath`（MPTCP 全局未启用），且 `multipath` 并非 netifd 选项（`openwrt/netifd` 全库 `multipath`/`mptcp` **0 命中**），故这行与「不写」等价，仅作防御性显式默认值（日后若开全局 MPTCP，接口不会自动 multipath）。⚠ 上游 LuCI 提交 `317ff9dd76`（2026-04-25）已将「关闭」的表示改空串 `''`，此处沿用 `off` 仅为与旧设备 `uci show` 形态一致 |
-| 网络 | `wan6.norelease='1'` | `[生效]` | 重启时不发 DHCPv6 RELEASE（odhcp6c `-k`），降低上级回收地址导致**前缀变化**的概率。未设时 odhcp6c 会带 `-R`（退出时发 RELEASE），故这是真变更 |
-| 网络 | `wan` / `wan6` 的 `sendclientid='auto'` | `[等价]` | DHCP 客户端标识取「自动」。`dhcp.sh` 与 `dhcpv6.sh` 的 `case` 都是 `auto\|*)` **合并分支** —— 「未设」落进 `*)`，与 `auto` 走同一段代码，等于不写 |
-| DHCP | 删除 `dhcp.lan.ra_slaac`、`dhcp.lan.dhcpv6` | `[等价]` | odhcpd 的默认值本就是 `ra_slaac=true`、`dhcpv6=disabled`，删除后行为不变。**⚠ 删 `ra_slaac` 并不能关闭 SLAAC**，要关必须显式写 `ra_slaac='0'` |
-| DHCP | `dhcp.lan.ra_preference='medium'` | `[等价]` | odhcpd 默认 `route_preference=0`，0 即 medium |
-| DHCP | `dhcp.wan.leasetime='12h'` / `start='100'` / `limit='150'` | `[等价]` | WAN 侧本就不提供 DHCP 服务（`dhcp.wan.ignore='1'` 是官方默认），这三项不产生实际效果；写上只为与设备现状一致 |
-| DHCP | 删除 `dnsmasq` 的 `nonwildcard` / `boguspriv` / `filterwin2k` / `filter_aaaa` / `filter_a`，以及 `odhcpd.maindhcp` | `[等价]` | 每一项都等于其默认值（`nonwildcard` 默认 1、`boguspriv` 默认 1，其余默认 0） |
-| DHCP | 删除 `dnsmasq.dns_redirect` | `[生效]` | **ImmortalWrt 特有**选项（上游 OpenWrt 没有）。置 1 时 dnsmasq 会插入 nft 规则把**所有过路 UDP/53** 劫持到本机（规则注释 `DNSMASQ HIJACK`），与代理插件自己接管 DNS 的行为冲突，故关闭 |
-| 防火墙 | 删除 `fullcone6` | `[等价]` | IPv6 全锥形 NAT，原本就是关闭（未设即关闭），删掉仍为关闭 |
-| 防火墙 | 删除 `syn_flood`（关闭 SYN-flood 防护） | `[生效]` | **关闭 SYN-flood 防护**（SYN cookies + WAN 侧新连接限速）。fw4 的 `synflood_protect` 无默认值（unset 即关），保护靠出厂 `option syn_flood 1` 打开；本机 WAN 双 NAT 对外不直接暴露、几乎无 SYN flood 风险且关闭无副作用，故删掉出厂的 `syn_flood` 让其回落 fw4 默认「关」 |
-| 防火墙 | 删除 `fullcone`（IPv4 全锥形 NAT） | `[生效]` | **关闭 IPv4 fullcone**。默认 '1' 由 ImmortalWrt 的 firewall4 fullcone 补丁注入到 @defaults，删掉即退回标准 masquerade。本机 WAN 处于**双 NAT**，上游 symmetric NAT 会抵消 fullcone 收益，对公网无实益且映射更宽松，关掉更保守、更接近 stock OpenWrt |
-| 防火墙 | 删除 `flow_offloading` / `flow_offloading_hw` | `[生效]` | **关闭流量卸载**。fw4 的默认值是 0（官方配置里写的 `'1'` 才是开启），删除即关闭；flow offload 会让首包之后的流量走 fast path **绕过 netfilter 钩子**，与 nikki 这类 TPROXY 透明代理冲突 |
+本脚本**只做一件事**：把工作流构建时传入的地址参数写进 uci 配置。
+除此之外**不做任何定制**，其余配置全部保持 ImmortalWrt 官方镜像默认 ——
+行为与官方 Image Builder 直接产出的镜像一致。
 
-> **小结：首启真正改变行为的只有 5 项** —— `wan6.norelease='1'`、
-> 关闭 DNS 劫持（删 `dns_redirect`）、关闭流量卸载（删 `flow_offloading*`）、
-> **关闭 IPv4 fullcone**（删 `fullcone`，双 NAT 下对公网无收益）、
-> 以及**关闭 SYN-flood 防护**（删出厂 `syn_flood`，双 NAT 下无 SYN flood 风险）；
-> 其余全部是写法归一化。
->
-> 各项的判断依据均取自上游源码（odhcpd `src/config.c`、`dnsmasq.init`、
-> netifd `proto/dhcp.sh`、odhcp6c `dhcpv6.sh`、
-> `usr/libexec/network/packet-steering.uc`、firewall4 `root/usr/share/ucode/fw4.uc`、
-> LuCI `view/firewall/zones.js` 与 `view/network/interfaces.js`），
-> 脚本注释里逐条给了出处。
+| 分类 | 项 | 来源 |
+| --- | --- | --- |
+| WAN | `network.wan` 的 `proto` / `ipaddr` / `gateway` / `dns` | 工作流输入 `wan_proto` / `wan_ip` / `wan_gateway` / `wan_dns`（默认 `dhcp`，即官方默认） |
+| LAN | `network.lan.ipaddr` | 工作流输入 `custom_router_ip`（默认 `192.168.2.1/24`） |
 
-> **有意不写入的**：`ttyd` / `dropbear` 的监听范围。脚本里原本那两行
-> 「放开到所有接口」的设置已**注释掉**，两个服务保持上游默认、只监听局域网。
-> 详见「WAN 入站防火墙」一节。
+补充说明：
+
+- **网口固定**：WAN = `eth0`（板载 GMAC）、LAN = `eth1`（USB RTL8153），
+  与官方 `board.d/02_network` 的 `ucidef_set_interfaces_lan_wan 'eth1' 'eth0'` 一致，
+  脚本不做任何接口探测。
+- **WAN6 / IPv6 双栈不在本脚本设置**：官方 `/bin/config_generate` 在 `proto=dhcp`
+  时已自动生成 `network.wan6`（`proto=dhcpv6`、`device=eth0`），向光猫请求
+  IPv6 地址与 PD 前缀，供下游 LAN 下发 IPv6 —— 故 IPv6 双栈不受影响。
+  该脚本在 **preinit_main** 阶段运行（`/lib/preinit/82_config_generate`，
+  `boot_hook_add preinit_main do_config_generate`），**早于**本脚本，
+  所以本脚本的 `uci set` 不会被它覆盖。
+- **有意不写入的**：`packet_steering`、`multipath`、DHCP/DNS 各项
+  （含 ImmortalWrt 特有的 `dns_redirect`）、防火墙（`fullcone` / `syn_flood` /
+  `flow_offloading`）、默认主题、`ttyd` / `dropbear` 监听范围 ——
+  **全部保持 ImmortalWrt 官方默认**。
+
+> ⚠️ **若你启用了透明代理（默认 nikki）**：ImmortalWrt 的防火墙出厂配置
+> （由 `001-firewall4-add-support-for-fullcone-nat.patch` 写入）是
+> `flow_offloading 1` / `flow_offloading_hw 1` / `fullcone 1` / `fullcone6 0`。
+> 其中 **flow offload 会让首包之后的流量绕过 netfilter 钩子，使 TPROXY 透明代理失效**，
+> 请在 LuCI「网络 → 防火墙 → 常规设置」里关闭「软件流量分载 / 硬件流量分载」。
+> 同理 dnsmasq 出厂 `dns_redirect 1` 会把所有过路 UDP/53 劫持到本机，
+> 若代理需要自己接管 DNS，也需一并关闭（LuCI「网络 → DHCP/DNS → 高级设置」）。
 
 ---
 
@@ -342,7 +346,7 @@ ALLOW_PROXY_CONFLICT=1 bash rockchip/build.sh
   build-rockchip-immortalWrt-25.12.x.yml  # R2S 固件构建工作流
   clean-workflow.yml                      # 维护用：清理旧 Actions 运行记录
 files/etc/uci-defaults/
-  99-custom.sh                            # 首次启动初始化脚本（R2S 专用，网口映射硬编码）
+  99-custom.sh                            # 首启初始化：只写工作流传入的 WAN/LAN 地址
 rockchip/
   build.sh                                # 构建脚本 + dllkids 源注入 + 代理互斥校验
   imm.config                              # Image Builder 配置
@@ -371,25 +375,24 @@ LICENSE                                   # 许可证
 本项目采用 **ImmortalWrt 25.12.x 官方镜像的防火墙策略**，做法是「**不干预**」：
 
 - 固件**不提供** `/etc/config/firewall`（完全继承 `firewall4` 包的默认配置）；
-- `99-custom.sh` 中**不修改任何区域（zone）、转发与通信规则的策略**，只做三件
-  与策略无关的事（详见上文「首启初始化」）：
-  ① 把已废弃的 `syn_flood` 迁移成 `synflood_protect`（保护**保持开启**），
-     并删除 `fullcone6`（均为默认行为）；
-  ② **修复历史遗留的非法 `enabled` 值** —— 旧版脚本曾把含字面单引号的 `'1'` 写进
-     9 条默认通信规则，导致 fw4 判定选项非法、**整段规则被丢弃**；现按 `name` 匹配、
-     只清非法值（删掉即回落默认「启用」），**不改变任何规则的启用/禁用意图**；
-  ③ **关闭流量卸载**（`flow_offloading` / `flow_offloading_hw`），
-     避免与 nikki 的 TPROXY 透明代理冲突。
+- `99-custom.sh` 中**不修改任何防火墙选项**（连流量卸载也不动），
+  出厂配置即 ImmortalWrt 官方默认。
 
-因此固件在**区域与规则策略**上完全继承 `firewall4` 包的官方默认配置。官方默认的关键部分
-（`firewall4` 上游 `root/etc/config/firewall`，ImmortalWrt `openwrt-25.12` 分支
-引用的正是这一版，其 `Makefile` 以 `$(CP) -a $(PKG_BUILD_DIR)/root/*` 直接装入）：
+官方默认的关键部分（`firewall4` 上游 `root/etc/config/firewall`，ImmortalWrt
+`openwrt-25.12` 分支引用的正是这一版，其 `Makefile` 以
+`$(CP) -a $(PKG_BUILD_DIR)/root/*` 直接装入；ImmortalWrt 另有
+`001-firewall4-add-support-for-fullcone-nat.patch` 追加了 fullcone 与流量卸载开关）：
 
 ```text
 config defaults
-	option input		REJECT
-	option output		ACCEPT
-	option forward		REJECT
+	option syn_flood		1
+	option input			REJECT
+	option output			ACCEPT
+	option forward			REJECT
+	option flow_offloading		1     # ← ImmortalWrt 补丁追加
+	option flow_offloading_hw	1     # ← ImmortalWrt 补丁追加
+	option fullcone			1     # ← ImmortalWrt 补丁追加
+	option fullcone6		0     # ← ImmortalWrt 补丁追加
 
 config zone
 	option name		lan
@@ -419,13 +422,16 @@ config zone
 > ⚠️ 放开后，WAN 侧同网段设备（乃至公网 IPv6，因为 `wan6` 的地址是全球可路由的）
 > 都能访问**无密码**的 root 后台。调试完请务必改回「拒绝」。
 
-> 说明：`99-custom.sh` 中原本还有两行让 ttyd / dropbear 监听**所有接口**
-> （`uci delete ttyd.@ttyd[0].interface`、`uci set dropbear.@dropbear[0].Interface=''`），
-> 现已**注释掉** —— 本项目只做局域网管理，这两个服务保持上游默认：
-> ttyd 监听 `br-lan`（`option interface '@lan'`，init 会把 `@` 前缀解析成网络 `lan`
-> 的设备），dropbear 监听 LAN 地址（`option Interface 'lan'`，init 会解析成
-> LAN 的 IP 后以 `-p <地址>:22` 启动）。需要从其他接口调试时，
-> 取消脚本里那两行的注释即可。
+> ⚠️ 再次提醒：因为本脚本不干预防火墙，**`flow_offloading` 保持出厂「开启」**。
+> 若启用 nikki 等 TPROXY 透明代理，请自行在
+> LuCI「网络 → 防火墙 → 常规设置」关闭「软件流量分载 / 硬件流量分载」，
+> 否则首包之后的流量会绕过 netfilter 钩子、代理不生效。
+
+> 说明：`ttyd` / `dropbear` 保持上游默认的监听范围 —— `ttyd` 监听 `br-lan`
+> （`option interface '@lan'`，init 会把 `@` 前缀解析成网络 `lan` 的设备），
+> dropbear 监听 LAN 地址（`option Interface 'lan'`，init 会解析成 LAN 的 IP 后
+> 以 `-p <地址>:22` 启动）。`99-custom.sh` **不干预**这两项；需要从其他接口调试时，
+> 请在 LuCI「系统 → 管理权 / 服务」里自行放开。
 
 ---
 

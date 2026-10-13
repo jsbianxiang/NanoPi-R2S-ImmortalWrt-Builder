@@ -1,5 +1,5 @@
 #!/bin/bash
-# 构建期日志（注意：固件内的首启日志是 /etc/config/uci-defaults-log.txt，两者不是一回事）
+# 构建期日志（注意：固件内的首启日志是 /etc/immortalwrt-builder/uci-defaults-log.txt，两者不是一回事）
 source shell/custom-packages.sh
 echo "第三方APK软件包: $CUSTOM_PACKAGES"
 LOGFILE="/tmp/build.log"
