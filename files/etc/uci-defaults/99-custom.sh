@@ -38,7 +38,32 @@
 # dnsmasq.init、firewall4 fw4.uc、LuCI zones.js），注释里给了出处。
 # =========================================================
 
-LOGFILE="/etc/config/uci-defaults-log.txt"
+# ---------------------------------------------------------------------------
+# 构建期注入的辅助文件统一放在 /etc/immortalwrt-builder/。
+#
+# ⚠ 不要把任何**非 uci 配置包**的文件放进 /etc/config/：
+#   libuci 会 glob 整个配置目录（file.c: uci_list_config_files() 用
+#   glob("<confdir>/*", GLOB_MARK)），只跳过「文件名含 `.`」的条目
+#   （file.c: get_filename()，源码注释原文 "Filename with '.' are ignored
+#   and not parsed"），其余一律按 uci 语法解析。无后缀文件（如 wan-settings）
+#   会被当成配置包解析，首行 `wan_proto=dhcp` 立刻命中 file.c:553 的
+#   uci_parse_error(ctx, "invalid command")，于是**任何** uci 调用
+#   （含 LuCI「软件包」页的安装动作）都会打印：
+#       uci: Parse error (invalid command) at line 1, byte 0
+#   本脚本自身的日志也遵循该约定，放在 /etc/immortalwrt-builder/ 下。
+# ---------------------------------------------------------------------------
+SETTINGS_DIR='/etc/immortalwrt-builder'
+mkdir -p "$SETTINGS_DIR" 2>/dev/null || :
+
+# 迁移兼容：旧版固件把 wan-settings 误放在 /etc/config/ 下（无后缀 → 被 uci
+# 当作配置包解析）。保留配置升级到本版时该文件会被 sysupgrade 带过来，因此
+# 这里在**任何 uci 调用之前**先删掉它，否则本脚本自身的 uci 调用也会刷出
+# "Parse error (invalid command)"。
+# （/etc/config/ 下旧版遗留的 custom_router_ip.txt、uci-defaults-log.txt 带 `.`
+#  后缀，uci 的 get_filename() 会跳过，无害，故不动它们。）
+rm -f /etc/config/wan-settings 2>/dev/null || :
+
+LOGFILE="$SETTINGS_DIR/uci-defaults-log.txt"
 echo "Starting 99-custom.sh at $(date)" >>$LOGFILE
 
 # 原实现这里有一行 `uci set firewall.@zone[1].input='ACCEPT'`（放开 WAN 入站），
@@ -54,6 +79,7 @@ echo "Starting 99-custom.sh at $(date)" >>$LOGFILE
 # 1. WAN / WAN6 接入方式
 # =========================================================
 # wan-settings 由 rockchip/build.sh 生成，含 wan_proto / wan_ip / wan_gateway / wan_dns。
+# 位置：/etc/immortalwrt-builder/wan-settings（**不是** /etc/config/，见文件开头说明）。
 # 默认 dhcp（与 ImmortalWrt 官方默认一致）；构建时选 static 才用后三项。
 #
 # ⚠ 这里**逐行解析**，不要写成 `. "$SETTINGS_FILE"`（source）：
@@ -64,7 +90,7 @@ echo "Starting 99-custom.sh at $(date)" >>$LOGFILE
 #     - 值里的 $( ) / ; / && 会在首启时被当命令执行。
 #   `while IFS='=' read -r _k _v` 只按第一个 `=` 切分，把其后的**整行剩余内容**
 #   原样取为值 —— 既支持空格分隔的多值 DNS，也不执行任何内容。
-SETTINGS_FILE="/etc/config/wan-settings"
+SETTINGS_FILE="$SETTINGS_DIR/wan-settings"
 if [ -f "$SETTINGS_FILE" ]; then
     while IFS='=' read -r _k _v; do
         case "$_k" in
@@ -155,14 +181,15 @@ uci set network.wan6.sendclientid='auto'
 # =========================================================
 # LAN 固定为 eth1（USB RTL8153）；br-lan 桥及其端口由官方 config_generate 生成，
 # 这里只改「管理地址」，不动 device / ports。
-# 地址由工作流的 custom_router_ip 传入（文件挂在 /etc/config/）。
+# 地址由工作流的 custom_router_ip 传入
+# （位置：/etc/immortalwrt-builder/custom_router_ip.txt，见文件开头说明）。
 # 同样采用 CIDR 列表记法，与 LuCI 切换后的形态一致（netifd 会从前缀长度推出掩码）。
 uci set network.lan.proto='static'
 uci -q delete network.lan.netmask
 uci -q delete network.lan.ipaddr
 
 CUSTOM_IP='192.168.2.1'
-IP_VALUE_FILE="/etc/config/custom_router_ip.txt"
+IP_VALUE_FILE="$SETTINGS_DIR/custom_router_ip.txt"
 if [ -f "$IP_VALUE_FILE" ]; then
     # 逐行读首个非空行 —— 既可裁掉可能的结尾换行，也能剔除首尾空白：
     #   `_tmp=$(cat file)` 会**保留**首尾空格，若文件是 "192.168.2.1  " 就会

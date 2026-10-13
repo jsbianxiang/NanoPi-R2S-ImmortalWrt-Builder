@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       keep_days:
-        description: "保留最近多少天（默认 1）"
+        description: "保留最近多少天（默认 1）。⚠️ 删除运行记录会连带删除该次运行的 Artifact（即构建产物归档），想留档请先把 keep_days 调大"
         required: false
         default: "1"
 

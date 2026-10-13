@@ -40,7 +40,7 @@ NanoPi R2S 专用：基于 GitHub Actions + ImmortalWrt 官方 Image Builder 的
 | PPPoE 拨号 | WAN 默认 **DHCP** 接入（与 ImmortalWrt 官方默认一致），也可选静态 IP，`99-custom.sh` 中已无任何 PPPoE 逻辑 |
 | 多机型 / 多网口适配 | 不做。本分支专用于 R2S，网口映射（`eth0`=WAN / `eth1`=LAN）在 `99-custom.sh` 中**硬编码**，不再探测接口数量 |
 
-第三方软件只注入 **Clashoo（kenzok8）** 一个源（默认只启用 Clashoo），
+第三方软件只注入 **dllkids（kenzok8）** 一个源（默认只启用该源的 **nikki**），
 由 `rockchip/build.sh` 在构建时注入，详见下文「预置软件与第三方源」。
 
 ---
@@ -49,8 +49,8 @@ NanoPi R2S 专用：基于 GitHub Actions + ImmortalWrt 官方 Image Builder 的
 
 | 工作流文件 | 名称 | 包管理 | 说明 |
 | --- | --- | --- | --- |
-| `.github/workflows/build-rockchip-immortalWrt-25.12.x.yml` | Build R2S ImmortalWrt 25.12.x | apk | 构建固件，默认 `25.12.2` |
-| `.github/workflows/clean-workflow.yml` | Cleanup Old Workflow Runs | — | 维护用：手动清理旧的 Actions 运行记录（默认只保留最近 1 天） |
+| `.github/workflows/build-rockchip-immortalWrt-25.12.x.yml` | Build R2S ImmortalWrt 25.12.x | apk | 构建固件，默认 `25.12.2`；产物同时发到 Release 与 Artifact（保留 90 天） |
+| `.github/workflows/clean-workflow.yml` | Cleanup Old Workflow Runs | — | 维护用：手动清理旧的 Actions 运行记录（默认只保留最近 1 天）。⚠️ **删运行记录会连带删掉那次的 Artifact**，想留档请先下载，或把 `keep_days` 调大 |
 
 ### 工作流输入项
 
@@ -68,7 +68,15 @@ NanoPi R2S 专用：基于 GitHub Actions + ImmortalWrt 官方 Image Builder 的
 
 1. 把本项目 fork 到你自己的账号（或克隆后推送到自己的仓库）。
 2. 进入 **Actions**，选择需要的工作流 → **Run workflow**，填写上述输入。
-3. 构建完成后，固件会作为 Release 资源（tag `Autobuild`，文件 `*.img.gz`）发布。
+3. 构建完成后，固件有两个去处：
+   - **Release**（tag `Autobuild`）：永远只有**一条**，每次构建**原地覆盖**附件
+     （`*.img.gz`），供「最新固件」一键下载。该 tag **不会**随构建移动，
+     Release 正文里的「构建提交」才是本次固件的真实来源。
+   - **Artifacts**（Actions → 那次运行 → 页面最下方）：本次构建的固件归档，
+     名为 `r2s-immortalwrt-<版本>-r<序号>`，保留 **90 天**。需要**历史版本**时用这里。
+
+> ⚠️ 维护提醒：`clean-workflow.yml` 默认只保留最近 1 天的运行记录，而
+> **删除运行记录会连带删除该次运行的 Artifact**。想留档请先把 `keep_days` 调大。
 
 > **提示**：`workflow_dispatch` 类型的工作流，**其文件必须存在于仓库的默认分支上**，
 > GitHub 才会在 Actions 页面显示 "Run workflow" 按钮（这是 GitHub 的硬性要求）。
@@ -140,11 +148,11 @@ GMAC，由内核直接支持。
 | DHCP | `dhcp.lan.ra_preference='medium'` | `[等价]` | odhcpd 默认 `route_preference=0`，0 即 medium |
 | DHCP | `dhcp.wan.leasetime='12h'` / `start='100'` / `limit='150'` | `[等价]` | WAN 侧本就不提供 DHCP 服务（`dhcp.wan.ignore='1'` 是官方默认），这三项不产生实际效果；写上只为与设备现状一致 |
 | DHCP | 删除 `dnsmasq` 的 `nonwildcard` / `boguspriv` / `filterwin2k` / `filter_aaaa` / `filter_a`，以及 `odhcpd.maindhcp` | `[等价]` | 每一项都等于其默认值（`nonwildcard` 默认 1、`boguspriv` 默认 1，其余默认 0） |
-| DHCP | 删除 `dnsmasq.dns_redirect` | `[生效]` | **ImmortalWrt 特有**选项（上游 OpenWrt 没有）。置 1 时 dnsmasq 会插入 nft 规则把**所有过路 UDP/53** 劫持到本机（规则注释 `DNSMASQ HIJACK`），与 Clashoo 自己接管 DNS 的行为冲突，故关闭 |
+| DHCP | 删除 `dnsmasq.dns_redirect` | `[生效]` | **ImmortalWrt 特有**选项（上游 OpenWrt 没有）。置 1 时 dnsmasq 会插入 nft 规则把**所有过路 UDP/53** 劫持到本机（规则注释 `DNSMASQ HIJACK`），与代理插件自己接管 DNS 的行为冲突，故关闭 |
 | 防火墙 | 删除 `fullcone6` | `[等价]` | IPv6 全锥形 NAT，原本就是关闭（未设即关闭），删掉仍为关闭 |
 | 防火墙 | 删除 `syn_flood`（关闭 SYN-flood 防护） | `[生效]` | **关闭 SYN-flood 防护**（SYN cookies + WAN 侧新连接限速）。fw4 的 `synflood_protect` 无默认值（unset 即关），保护靠出厂 `option syn_flood 1` 打开；本机 WAN 双 NAT 对外不直接暴露、几乎无 SYN flood 风险且关闭无副作用，故删掉出厂的 `syn_flood` 让其回落 fw4 默认「关」 |
 | 防火墙 | 删除 `fullcone`（IPv4 全锥形 NAT） | `[生效]` | **关闭 IPv4 fullcone**。默认 '1' 由 ImmortalWrt 的 firewall4 fullcone 补丁注入到 @defaults，删掉即退回标准 masquerade。本机 WAN 处于**双 NAT**，上游 symmetric NAT 会抵消 fullcone 收益，对公网无实益且映射更宽松，关掉更保守、更接近 stock OpenWrt |
-| 防火墙 | 删除 `flow_offloading` / `flow_offloading_hw` | `[生效]` | **关闭流量卸载**。fw4 的默认值是 0（官方配置里写的 `'1'` 才是开启），删除即关闭；flow offload 会让首包之后的流量走 fast path **绕过 netfilter 钩子**，与 Clashoo 这类 TPROXY 透明代理冲突 |
+| 防火墙 | 删除 `flow_offloading` / `flow_offloading_hw` | `[生效]` | **关闭流量卸载**。fw4 的默认值是 0（官方配置里写的 `'1'` 才是开启），删除即关闭；flow offload 会让首包之后的流量走 fast path **绕过 netfilter 钩子**，与 nikki 这类 TPROXY 透明代理冲突 |
 
 > **小结：首启真正改变行为的只有 5 项** —— `wan6.norelease='1'`、
 > 关闭 DNS 劫持（删 `dns_redirect`）、关闭流量卸载（删 `flow_offloading*`）、
@@ -172,7 +180,7 @@ GMAC，由内核直接支持。
 
 - 官方软件源中的**全部 kmod** 都可直接安装（kmods 源由 Image Builder 自动纳入，
   其依赖精确的内核版本，官方内核天然匹配）。
-- Clashoo 依赖的 `kmod-tun`、`kmod-nft-tproxy`、`kmod-nft-socket`、`kmod-inet-diag`
+- 代理插件（默认 nikki）依赖的 `kmod-tun`、`kmod-nft-tproxy`、`kmod-nft-socket`、`kmod-inet-diag`
   等内核模块均由官方 kmods 源解析。
 
 > **注意：首启后官方源地址会被改写为 ImmortalWrt 官方镜像。**
@@ -184,9 +192,9 @@ GMAC，由内核直接支持。
 > 该操作会留下一个 `distfeeds.list.bak`，但 apk 只读取 `.list` 后缀的文件，
 > 这个备份不会被加载，无副作用。
 
-### 第三方源：Clashoo
+### 第三方源：dllkids（kenzok8）
 
-`rockchip/build.sh` 在 `make image` 之前注入 Clashoo 的 APK 源与签名公钥：
+`rockchip/build.sh` 在 `make image` 之前注入 dllkids（kenzok8）的 APK 源与签名公钥：
 
 ```sh
 CLASHOO_FEED="https://down.dllkids.xyz/openwrt-feed/25.12/aarch64_generic/packages.adb"
@@ -196,15 +204,108 @@ CLASHOO_KEY_URL="https://down.dllkids.xyz/openwrt-feed/keys/dllkids-feed.pub.pem
 > - `aarch64_generic` 必须与目标的 `ARCH_PACKAGES` 一致，否则 apk 会以架构不符拒绝。
 > - 25.12 的配置启用了 `CONFIG_SIGNATURE_CHECK`，**必须**提供公钥，
 >   否则安装时会报 `UNTRUSTED signature`。
-> - Clashoo 与 nikki 配置冲突，**不要同时集成**。
+> - 该源除默认启用的 nikki 外，还提供 clashoo / luci-app-ssr-plus / passwall2 /
+>   openclash / mihomo 等。**这些代理插件互斥，只能启用一个** —— 详见下一节
+>   「代理插件互斥」。
 > - **该源与公钥也会随固件发布**，因此设备端可直接 `apk update` / `apk add` /
->   `apk upgrade` Clashoo 系包。做法：`rockchip/build.sh` 除注入构建期用的
+>   `apk upgrade` 该源的包。做法：`rockchip/build.sh` 除注入构建期用的
 >   `repositories` / `keys/`（`make image` 通过 `--repositories-file` / `--keys-dir`
 >   读取，这两个本身不会被拷进固件）之外，还把源与公钥写进 `files/`，随固件落到
 >   `/etc/apk/repositories.d/customfeeds.list` 与 `/etc/apk/keys/dllkids-feed.pub.pem`。
 >   （`customfeeds.list` 是 `apk` 包为「用户自加第三方源」预留的 conffile，
 >   上游默认就是三行注释占位；`CONFIG_SIGNATURE_CHECK=y`，设备端缺公钥会报
 >   `UNTRUSTED signature`。）
+
+### 代理插件互斥
+
+dllkids 源里所有**透明代理接管型**插件都只能启用**一个**。本分支默认启用
+**nikki**（eBPF / TUN 体系）；若想换成别的（例如 Clashoo、Daed、OpenClash），
+必须**先停旧的，再开新的**。
+
+**为什么不能双开**：这些插件每一套都会独自接管整个透明代理 ——
+各自写 nftables/iptables 的 `REDIRECT` / `TPROXY` 规则、各自劫持 DNS、
+抢占同一批端口（7890-7895 / 9090 / 1080 / 53 …）、各自注册 `/etc/init.d`
+脚本与 UCI 配置包。双开的后果是规则打架、LuCI 配置错乱、DNS 解析冲突 ——
+轻则无法科学上网，重则刷机后直接断网。
+
+**已核实存在、且互斥的代理栈**（27 个）：
+
+| 代理栈 | 标志包 |
+| --- | --- |
+| nikki（默认） | `luci-app-nikki` / `nikki` |
+| Clashoo | `luci-app-clashoo` / `clashoo` |
+| OpenClash | `luci-app-openclash` |
+| PassWall | `luci-app-passwall` |
+| PassWall2 | `luci-app-passwall2` |
+| SSR-Plus | `luci-app-ssr-plus` |
+| homeproxy | `luci-app-homeproxy` |
+| Daed 系 | `luci-app-dae` / `luci-app-daed` / `luci-app-daed-next` / `luci-app-daede` |
+| shadowsocks 系 | `luci-app-shadowsocks` / `luci-app-shadowsocks-libev` / `luci-app-shadowsocks-rust` |
+| redsocks 系 | `luci-app-redsocks` / `luci-app-redsocks2` |
+| domain-proxy | `luci-app-domain-proxy`（redsocks 的另一种前端：走 dnsmasq+ipset 域名分流） |
+| xray | `luci-app-xray` |
+| v2raya | `v2raya` |
+| ss-redir | `luci-app-ss-redir` |
+| nekobox | `luci-app-nekobox` |
+| honk | `luci-app-honk` |
+| jederproxy | `luci-app-jederproxy` |
+| xjay | `luci-app-xjay` |
+| mproxy | `luci-app-mproxy` |
+| miniproxy | `luci-app-miniproxy` |
+| fchomo | `luci-app-fchomo` |
+
+> 后 9 项是 2026-10-12「联动审计」补入的（原表只有 18 套）。起因：dllkids
+> 源有 **406 个 `luci-app-*`**，人工维护的黑名单必然滞后。审计方法（可复现）：
+> 从源目录列表按 ① 包名关键词（clash / ss / xray / v2ray / proxy / dae …）
+> ② apk 体积（自带内核的前端必然 ≥ 数 MiB —— nekobox 10 MiB、honk 9.6 MiB、
+> openclash 7.8 MiB；而纯配置页只有几 KiB —— redsocks 2.5 KiB、ss-redir
+> 3.5 KiB）两个维度筛出候选，再用上游仓库 README 定性（domain-proxy 由
+> Makefile 的 `LUCI_TITLE:="Domain Proxy for redsocks."` 定性）。末三个
+> （mproxy / miniproxy / fchomo）按包名与体积推断，置信度略低，若属误判删行即可。
+
+**不算冲突**（可与其他栈共存）：
+
+- 状态页 / 服务端：`luci-app-xray-status`（xray 的配套状态页）、
+  `luci-app-ssrserver-python` / `luci-app-ssr-mudb-server` / `luci-app-v2ray-server`、
+  `microsocks` / `gost` / `softethervpn`、`tun2socks`（助手）
+- DNS 与过滤层：`luci-app-dnsproxy` / `luci-app-dnscrypt-proxy2`（DNS）、
+  `luci-app-ikoolproxy`（广告过滤）、`luci-app-haproxy-tcp`（负载均衡）、
+  `smartdns` / `mosdns` / `chinadns-ng` / `adguardhome`
+- 数据包：`geoview` / `v2ray-geoip` / `v2ray-geosite`
+
+> 以上 `luci-app-*` 与 `rockchip/build.sh` 里的 `_PROXY_OK` 白名单**逐项对应**
+> （它们会命中兜底关键词，但已知不接管透明代理，故显式排除）。
+
+**换栈三步走**（改 `shell/custom-packages.sh`）：
+
+1. 注释掉「一」里当前启用的 nikki 行；
+2. 取消目标栈那一行的注释（**只取消一行**）；
+3. 重跑构建。
+
+**不用靠记性 —— 构建期硬校验**：`rockchip/build.sh` 在合并完 `PACKAGES`
+之后会检查代理栈数量，检测到 ≥2 套就 **`exit 1`** 并打印是哪几套、怎么改：
+
+```
+ERROR: 检测到 2 套代理插件同时启用：nikki clashoo
+```
+
+确需同时安装（仅实验用途、不指望能上网）时可显式放行：
+
+```sh
+ALLOW_PROXY_CONFLICT=1 bash rockchip/build.sh
+```
+
+> ⚠ 校验用**整词**匹配，不会误判：`luci-app-passwall2` ≠ `luci-app-passwall`、
+> `luci-app-xray-status` ≠ `luci-app-xray`、`luci-app-daed-next` ≠ `luci-app-daed`。
+>
+> 💡 另有**兜底提示**（只提示、不报错）：黑名单挡不住源里新冒出来的代理前端，
+> 所以 `build.sh` 还会扫一遍已选包，凡 `luci-app-*` 命中代理关键词
+> （clash / ss / xray / v2ray / proxy / nekobox / dae …）又不在上表里的，
+> 会打印「疑似代理类」并提醒你补 `_PROXY_STACKS`。状态页 / 服务端 / DNS 层
+> （`luci-app-xray-status`、`luci-app-ssrserver-python`、`luci-app-v2ray-server`
+> 等）已在白名单里，不会被误提示。
+> 新增代理栈时，记得同步更新 `rockchip/build.sh` 里的 `_PROXY_STACKS` 表、
+> 本表、以及 `shell/custom-packages.sh` 文件头「注意事项 2」的清单 —— 三处同步。
 
 ### 预置软件包清单
 
@@ -221,15 +322,15 @@ CLASHOO_KEY_URL="https://down.dllkids.xyz/openwrt-feed/keys/dllkids-feed.pub.pem
 - 少数不是 `luci-app-<短名>` 形式的包（`luci-proto-*` / `luci-mod-*` /
   openclash / passwall 等），取消对应行注释即可。
 
-第三方插件只有 Clashoo 一个（已默认启用）。
+第三方插件默认启用 **nikki** 一个（见上一节「代理插件互斥」；换栈时必须先停旧的）。
 
 ### 如何自行增加第三方源
 
 把源的 `packages.adb` **全路径**追加到 Image Builder 根目录的 `repositories` 文件，
-并把签名公钥放进 `keys/` 目录。参考 `rockchip/build.sh` 中 Clashoo 的注入写法。
+并把签名公钥放进 `keys/` 目录。参考 `rockchip/build.sh` 中 dllkids 源的注入写法。
 
 > 注意：`repositories` / `keys/` 是**构建期**注入，只让 `make image` 能找到并校验包。
-> 若还希望**设备端**也能从该源安装，需像 Clashoo 那样额外把源与公钥写进 `files/`
+> 若还希望**设备端**也能从该源安装，需像 dllkids 那样额外把源与公钥写进 `files/`
 > （见上一节说明）。
 
 ---
@@ -243,19 +344,25 @@ CLASHOO_KEY_URL="https://down.dllkids.xyz/openwrt-feed/keys/dllkids-feed.pub.pem
 files/etc/uci-defaults/
   99-custom.sh                            # 首次启动初始化脚本（R2S 专用，网口映射硬编码）
 rockchip/
-  build.sh                                # 构建脚本 + Clashoo 源注入
+  build.sh                                # 构建脚本 + dllkids 源注入 + 代理互斥校验
   imm.config                              # Image Builder 配置
 shell/
-  custom-packages.sh                      # 可选软件包开关（第三方插件仅 Clashoo，已默认启用）
+  custom-packages.sh                      # 可选软件包开关（第三方插件默认仅 nikki）
 README.md                                 # 本文件
 PACKAGES.md                               # 软件包来源与启用方式说明
 SUPPORT.md                                # 支持的机型列表
 LICENSE                                   # 许可证
 .gitattributes                            # 强制 LF 换行（shell 脚本必需）
+.gitignore                                # 忽略构建期产物（bin/ custom/ files/etc/…）
 ```
 
-> 说明：`rockchip/build.sh` 在运行时还会生成 `files/etc/config/wan-settings`，
+> 说明：`rockchip/build.sh` 在运行时还会生成 `files/etc/immortalwrt-builder/wan-settings`，
 > 工作流会生成 `custom/custom_router_ip.txt`；这两者随固件发布，但**不属于仓库文件**。
+>
+> ⚠ 它们**不能**放在 `/etc/config/` 下：libuci 会 glob 整个配置目录，只跳过文件名含 `.`
+> 的条目（`openwrt/uci` file.c: `get_filename()`），无后缀文件会被当成 uci 配置包解析，
+> 使**任何** uci 调用（含 LuCI 软件包页）报 `uci: Parse error (invalid command) at line 1, byte 0`。
+> 因此构建期辅助文件统一放 `/etc/immortalwrt-builder/`，详见 `rockchip/build.sh` 顶部说明。
 
 ---
 
@@ -272,7 +379,7 @@ LICENSE                                   # 许可证
      9 条默认通信规则，导致 fw4 判定选项非法、**整段规则被丢弃**；现按 `name` 匹配、
      只清非法值（删掉即回落默认「启用」），**不改变任何规则的启用/禁用意图**；
   ③ **关闭流量卸载**（`flow_offloading` / `flow_offloading_hw`），
-     避免与 Clashoo 的 TPROXY 透明代理冲突。
+     避免与 nikki 的 TPROXY 透明代理冲突。
 
 因此固件在**区域与规则策略**上完全继承 `firewall4` 包的官方默认配置。官方默认的关键部分
 （`firewall4` 上游 `root/etc/config/firewall`，ImmortalWrt `openwrt-25.12` 分支
@@ -332,7 +439,7 @@ config zone
 
 <a href="https://github.com/immortalwrt"><img src="https://avatars.githubusercontent.com/immortalwrt?v=4&s=80" width="80" height="80" alt="immortalwrt" /></a>
 <a href="https://github.com/wukongdaily"><img src="https://avatars.githubusercontent.com/wukongdaily?v=4&s=80" width="80" height="80" alt="wukongdaily（悟空 / 上游）" /></a>
-<a href="https://github.com/kenzok8"><img src="https://avatars.githubusercontent.com/kenzok8?v=4&s=80" width="80" height="80" alt="kenzok8（Clashoo 作者）" /></a>
+<a href="https://github.com/kenzok8"><img src="https://avatars.githubusercontent.com/kenzok8?v=4&s=80" width="80" height="80" alt="kenzok8（dllkids 源作者）" /></a>
 <a href="https://github.com/sirpdboy"><img src="https://avatars.githubusercontent.com/sirpdboy?v=4&s=80" width="80" height="80" alt="sirpdboy" /></a>
 <a href="https://github.com/sbwml"><img src="https://avatars.githubusercontent.com/sbwml?v=4&s=80" width="80" height="80" alt="sbwml" /></a>
 <a href="https://github.com/eamonxg"><img src="https://avatars.githubusercontent.com/eamonxg?v=4&s=80" width="80" height="80" alt="eamonxg" /></a>

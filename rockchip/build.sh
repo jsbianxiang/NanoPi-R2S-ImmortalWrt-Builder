@@ -9,8 +9,33 @@ echo "Building for profile: $PROFILE"
 # yml 传入的固件大小 ROOTFS_PARTSIZE
 echo "Building for ROOTFS_PARTSIZE: $ROOTFS_PARTSIZE"
 
-echo "Create wan-settings"
-mkdir -p  /home/build/immortalwrt/files/etc/config
+# ---------------------------------------------------------------------------
+# 构建期注入目录：/etc/immortalwrt-builder/
+#
+# ⚠ 这些辅助文件**绝不能**放在 /etc/config/ 下。
+#   已核实 libuci 源码（openwrt/uci，file.c）：
+#     - uci_list_config_files() 用 glob("<confdir>/*", GLOB_MARK) **扫描整个目录**；
+#     - get_filename() 只跳过「文件名含 `.`」的条目，源码注释原文：
+#         "Filename with '.' are ignored and not parsed. Uci doesn't
+#          permit config files with '.' in the name and cause parsing problems."
+#       其余条目一律经 uci_validate_package() 后当作 uci 配置包解析
+#       （校验只放行可打印 ASCII，`-` 也允许，挡不住 wan-settings 这种名字）。
+#   ⇒ 无后缀、内容又是 key=value 的 wan-settings 会被当 uci 语法解析，
+#     首行 `wan_proto=dhcp` 不匹配 package/config/option/list 任一关键字，
+#     直接命中 file.c:553 的 uci_parse_error(ctx, "invalid command")。
+#     现象就是**任何** uci 调用都打印：
+#         uci: Parse error (invalid command) at line 1, byte 0
+#     LuCI 的「软件包」页安装软件同样经由 uci，因此也报同一行错误。
+#
+#   约定：/etc/config/ 只放 uci 配置包；构建期辅助文件统一放
+#         /etc/immortalwrt-builder/（无后缀不会被任何组件扫描）。
+#   （旧版曾把 wan-settings / custom_router_ip.txt 放进 /etc/config/，
+#     files/etc/uci-defaults/99-custom.sh 里有对应的迁移清理。）
+# ---------------------------------------------------------------------------
+BUILDER_DIR="/home/build/immortalwrt"
+SETTINGS_DIR="$BUILDER_DIR/files/etc/immortalwrt-builder"
+echo "Create $SETTINGS_DIR"
+mkdir -p "$SETTINGS_DIR"
 
 # DNS 留空时回落到网关（光猫一般自带 DNS 转发）
 WAN_DNS="${WAN_DNS:-$WAN_GATEWAY}"
@@ -19,7 +44,7 @@ WAN_PROTO="${WAN_PROTO:-dhcp}"
 
 # 创建 WAN 配置文件（yml 传入 WAN_PROTO / WAN_IP / WAN_GATEWAY / WAN_DNS）
 # 该文件随固件发布，供 99-custom.sh 首次启动时读取
-cat << EOF > /home/build/immortalwrt/files/etc/config/wan-settings
+cat << EOF > "$SETTINGS_DIR/wan-settings"
 wan_proto=${WAN_PROTO}
 wan_ip=${WAN_IP}
 wan_gateway=${WAN_GATEWAY}
@@ -27,7 +52,7 @@ wan_dns=${WAN_DNS}
 EOF
 
 echo "cat wan-settings"
-cat /home/build/immortalwrt/files/etc/config/wan-settings
+cat "$SETTINGS_DIR/wan-settings"
 
 if [ -z "$CUSTOM_PACKAGES" ]; then
   echo "⚪️ 未选择 任何第三方软件包"
@@ -68,6 +93,186 @@ PACKAGES="$PACKAGES luci-i18n-filemanager-zh-cn"
 # ======== shell/custom-packages.sh =======
 # 合并imm仓库以外的第三方插件
 PACKAGES="$PACKAGES $CUSTOM_PACKAGES"
+
+# ===========================================================================
+# 代理类插件互斥 —— 构建期硬校验
+# ---------------------------------------------------------------------------
+# 本段 2026-10-13 自 NanoPi-R2S-OpenWrt-Builder 平移而来，与该仓库的校验保持
+# 一致（那边默认 Clashoo，这边默认 nikki，仅默认值不同，判定逻辑完全相同）。
+#
+# 本项目默认启用 nikki（见 shell/custom-packages.sh「一」）。若想换成
+# dllkids（kenzok8）源里的其他代理（clashoo / openclash / passwall(2) /
+# ssr-plus / homeproxy / dae(d) / shadowsocks / redsocks / xray / v2raya …），
+# **必须先停旧的再开新的**，不能双开。
+#
+# 为什么不能双开 —— 这些插件每一套都会**独自接管整个透明代理**：
+#   - 各自写 nftables/iptables 的 REDIRECT / TPROXY 规则（链名与优先级不同，
+#     互相覆盖后流量走向不确定）；
+#   - 各自劫持 DNS（dnsmasq 的 server/ipset/nftset 与 53 端口占用）；
+#   - 抢占同一批端口（7890-7895 / 9090 / 1080 / 53 …）；
+#   - 各自注册 /etc/init.d 脚本与 UCI 配置包，LuCI 页面选项重名。
+#   后果是规则打架、LuCI 配置错乱、DNS 解析冲突：轻则无法科学上网，
+#   重则刷机后直接断网。而且这类问题往往刷完才暴露 —— 所以拦在构建期。
+#
+# 判定：$PACKAGES 里出现 ≥2 个「代理栈」即失败。
+#   ⚠ 必须**整词**匹配，不能用 grep 子串，否则会误判：
+#       luci-app-passwall2   是与 luci-app-passwall 不同的包；
+#       luci-app-xray-status 是 luci-app-xray 的**配套状态页**（可共存，不算独立栈）；
+#       luci-app-daed-next / luci-app-daede 与 luci-app-daed 也是不同包。
+#     因此这里用 case 的 " $PACKAGES " 整词匹配，而不是 grep。
+#
+# 放行：确需同时安装（仅实验用途、不指望能上网）时设 ALLOW_PROXY_CONFLICT=1。
+#
+# —— 2026-10-12「联动审计」补充的 9 套（原表 18 套漏掉了它们）——
+#   证据均可复现（包名/体积取自 dllkids 源目录列表，描述取自上游仓库）：
+#     · luci-app-nekobox   —— Thaolga/openwrt-nekobox，自述 "Unlock the Web with
+#                             Sing-box"；apk 10.0 MiB（内置 sing-box 内核，
+#                             普通 LuCI 前端仅几十 KiB）
+#     · luci-app-honk      —— QiuSimons/luci-app-honk，README 自述「基于 eBPF 的
+#                             高性能透明代理引擎，dae 兼容」；apk 9.6 MiB
+#     · luci-app-jederproxy—— ttimasdf/luci-app-jederproxy，自述 "LuCI interface
+#                             and nftables/iptables generator for multiple proxy
+#                             backends, supporting mihomo/clash"
+#     · luci-app-xjay      —— rafmilecki/luci-app-xjay，自述 "Yet another
+#                             xray-core luci app"
+#     · luci-app-ss-redir  —— ss-redir 即 shadowsocks 的透明重定向组件；
+#                             apk 仅 3.5 KiB（极简配置页，与已确认的
+#                             luci-app-redsocks 2.5 KiB 同级）
+#     · luci-app-mproxy / -miniproxy / -fchomo —— 按包名（proxy / homo=mihomo）
+#                             与体积推断，置信度略低；若确认不是接管型，删行即可。
+#     · luci-app-domain-proxy —— mukaiu/luci-app-domain-proxy，Makefile 里
+#                             LUCI_TITLE:="Domain Proxy for redsocks."，README
+#                             「配合 dnsmasq-full ipset redsocks 使用」⇒ 它是
+#                             redsocks 的**另一种前端**（走 dnsmasq+ipset 做域名
+#                             分流），与 luci-app-redsocks 共用同一个 redsocks
+#                             守护进程。两个前端同装会生成两套 ipset/规则、
+#                             两个 init 抢同一进程，故独立成一栈拦下。
+#
+#   ⚠ 维护提示：dllkids 源有 406 个 luci-app-*，黑名单不可能穷举（这也是那次
+#     审计的起因）。所以本文件在校验之后还有一段「关键词启发式提示」兜底
+#     （见下方 _PROXY_KW）。**新增/发现新栈时，请三处同步**：
+#       1) 本表 _PROXY_STACKS
+#       2) README「代理插件互斥」的对照表
+#       3) shell/custom-packages.sh 文件头「注意事项 2」的清单
+# ===========================================================================
+_PROXY_STACKS="
+clashoo|luci-app-clashoo clashoo
+nikki|luci-app-nikki nikki
+openclash|luci-app-openclash
+passwall|luci-app-passwall
+passwall2|luci-app-passwall2
+ssr-plus|luci-app-ssr-plus
+homeproxy|luci-app-homeproxy
+dae|luci-app-dae dae
+daed|luci-app-daed daed
+daed-next|luci-app-daed-next
+daede|luci-app-daede
+shadowsocks|luci-app-shadowsocks
+shadowsocks-libev|luci-app-shadowsocks-libev
+shadowsocks-rust|luci-app-shadowsocks-rust
+redsocks|luci-app-redsocks
+redsocks2|luci-app-redsocks2
+domain-proxy|luci-app-domain-proxy
+xray|luci-app-xray
+v2raya|v2raya
+ss-redir|luci-app-ss-redir
+nekobox|luci-app-nekobox
+honk|luci-app-honk honk
+jederproxy|luci-app-jederproxy
+xjay|luci-app-xjay
+mproxy|luci-app-mproxy
+miniproxy|luci-app-miniproxy
+fchomo|luci-app-fchomo
+"
+_PROXY_HIT=""
+_PROXY_KNOWN=""          # 所有已知 marker 的并集，供下方启发式兜底排除
+while IFS='|' read -r _stack _markers; do
+    [ -n "$_stack" ] || continue
+    for _m in $_markers; do
+        _PROXY_KNOWN="$_PROXY_KNOWN $_m"
+        case " $PACKAGES " in
+            *" $_m "*) _PROXY_HIT="$_PROXY_HIT $_stack"; break ;;
+        esac
+    done
+done <<EOF
+$_PROXY_STACKS
+EOF
+_PROXY_HIT="${_PROXY_HIT# }"
+_PROXY_N=0
+for _h in $_PROXY_HIT; do _PROXY_N=$((_PROXY_N + 1)); done
+
+if [ "$_PROXY_N" -gt 1 ]; then
+    {
+        echo ""
+        echo "=============================================================="
+        echo "ERROR: 检测到 $_PROXY_N 套代理插件同时启用：$_PROXY_HIT"
+        echo "--------------------------------------------------------------"
+        echo "它们都会各自接管透明代理（防火墙规则 / DNS / TUN / 端口），"
+        echo "双开会互相覆盖规则、LuCI 配置错乱、DNS 劫持冲突，"
+        echo "轻则无法科学上网，重则刷机后直接断网。"
+        echo ""
+        echo "改法（shell/custom-packages.sh）—— 先停旧的，再开新的："
+        echo "  1) 注释掉「一」里当前启用的那行（默认是 nikki）；"
+        echo "  2) 取消你要用的那行注释；"
+        echo "  3) 重跑构建。"
+        echo ""
+        echo "确需同时安装（仅实验用途、不指望能上网）："
+        echo "  ALLOW_PROXY_CONFLICT=1 bash rockchip/build.sh"
+        echo "=============================================================="
+        echo ""
+    } >&2
+    if [ "${ALLOW_PROXY_CONFLICT:-0}" != "1" ]; then
+        exit 1
+    fi
+    echo "⚠ ALLOW_PROXY_CONFLICT=1：已显式放行代理插件互斥，继续构建（风险自负）。" >&2
+else
+    echo "✅ 代理插件互斥检查通过：启用 ${_PROXY_N} 套（${_PROXY_HIT:-无}）"
+fi
+
+# ---------------------------------------------------------------------------
+# 兜底：关键词启发式提示（只提示，不阻断构建）
+# ---------------------------------------------------------------------------
+# 黑名单挡不住「源里新冒出来的代理前端」——dllkids 有 406 个 luci-app-*，
+# 靠人工维护 _PROXY_STACKS 必然滞后（那次审计就发现漏了 8 套）。所以再扫一遍
+# 已选包：凡 luci-app-* 命中代理关键词、又不在已知表里的，提示一下，由人判断
+# 要不要补进 _PROXY_STACKS。刻意不 exit 1，避免误伤非代理包。
+_PROXY_KW="clash mihomo homo nikki passwall ssr shadowsocks redsocks xray xjay
+v2ray dae homeproxy hysteria trojan brook naive singbox sing-box nekobox honk proxy"
+# 白名单：命中关键词但**已知不属于接管型**的包，与 README「不算冲突」名单对应。
+# 三类：状态页（xray-status）/ 服务端（*-server）/ DNS 与过滤层（dnsproxy、
+# dnscrypt-proxy2、ikoolproxy、haproxy-tcp）—— 免得兜底提示自相矛盾、喊狼来了。
+_PROXY_OK="luci-app-xray-status
+luci-app-ssrserver-python luci-app-ssr-mudb-server luci-app-v2ray-server
+luci-app-dnscrypt-proxy2 luci-app-dnsproxy luci-app-ikoolproxy luci-app-haproxy-tcp"
+_PROXY_SUS=""
+for _p in $PACKAGES; do
+    case "$_p" in luci-app-*) ;; *) continue ;; esac
+    case " $_PROXY_KNOWN " in *" $_p "*) continue ;; esac
+    # 白名单用 for 逐项比对，不用 case 整串匹配：_PROXY_OK 是多行变量，
+    # case 的 *" $_p "* 需要前导空格，遇到换行会漏判（实测踩过）。
+    _skip=""
+    for _o in $_PROXY_OK; do
+        [ "$_o" = "$_p" ] && { _skip=1; break; }
+    done
+    [ -n "$_skip" ] && continue
+    for _k in $_PROXY_KW; do
+        case "$_p" in *"$_k"*) _PROXY_SUS="$_PROXY_SUS $_p"; break ;; esac
+    done
+done
+if [ -n "$_PROXY_SUS" ]; then
+    {
+        echo ""
+        echo "⚠ 提示：以下包名疑似代理类，但不在已知互斥表（_PROXY_STACKS）里："
+        echo "   $_PROXY_SUS"
+        echo "   若它确实是「透明代理接管型」插件，请补进 rockchip/build.sh 的"
+        echo "   _PROXY_STACKS，并同步 README「代理插件互斥」表与"
+        echo "   shell/custom-packages.sh 文件头「注意事项 2」的清单。"
+        echo ""
+    } >&2
+fi
+
+unset _PROXY_STACKS _PROXY_HIT _PROXY_N _PROXY_KNOWN _stack _markers _m _h
+unset _PROXY_KW _PROXY_OK _PROXY_SUS _p _k _skip _o
 
 # 构建镜像
 echo "$(date '+%Y-%m-%d %H:%M:%S') - Building image with the following packages:"
@@ -203,7 +408,7 @@ cat files/etc/apk/repositories.d/customfeeds.list
 echo "---- 随固件发布的公钥 ----"
 ls -l files/etc/apk/keys/
 
-make image PROFILE=$PROFILE PACKAGES="$PACKAGES" FILES="/home/build/immortalwrt/files" ROOTFS_PARTSIZE=$ROOTFS_PARTSIZE
+make image PROFILE=$PROFILE PACKAGES="$PACKAGES" FILES="$BUILDER_DIR/files" ROOTFS_PARTSIZE=$ROOTFS_PARTSIZE
 
 if [ $? -ne 0 ]; then
     echo "$(date '+%Y-%m-%d %H:%M:%S') - Error: Build failed!"

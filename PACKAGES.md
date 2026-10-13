@@ -18,40 +18,45 @@
 > 这是 **ImmortalWrt 官方行为**，非本分支定制；留下的 `distfeeds.list.bak` 不会被 apk 加载。
 > 详见 `README.md`「官方源」一节。
 
-## 二、第三方源：Clashoo
+## 二、第三方源：dllkids（kenzok8）
 
-本分支只注入了一个第三方源 —— **Clashoo**（作者 kenzok8），由 `rockchip/build.sh` 注入。
+本分支只注入了一个第三方源 —— **dllkids**（kenzok8 的 APK 源），由 `rockchip/build.sh` 注入。
+
+**当前默认启用**（代理栈只能启用一个，见 README「代理插件互斥」）：
 
 | 软件包 | 简介 | 来源 |
 | --- | --- | --- |
-| `clashoo` | 双内核代理（mihomo + sing-box） | [kenzok8](https://github.com/kenzok8) |
-| `luci-app-clashoo` | Clashoo LuCI 前端 | [kenzok8](https://github.com/kenzok8) |
-| `luci-i18n-clashoo-zh-cn` | Clashoo 简体中文语言包 | [kenzok8](https://github.com/kenzok8) |
+| `luci-app-nikki` | nikki 的 LuCI 前端（eBPF / TUN 透明代理） | [kenzok8](https://github.com/kenzok8) |
+| `nikki` | nikki 内核 | [kenzok8](https://github.com/kenzok8) |
+| `kmod-tun` / `kmod-inet-diag` / `kmod-nft-tproxy` / `kmod-nft-socket` | nikki 依赖的内核模块 | ImmortalWrt 官方 kmods 源 |
 
 - APK 源：`https://down.dllkids.xyz/openwrt-feed/25.12/aarch64_generic/packages.adb`
 - 签名公钥：`https://down.dllkids.xyz/openwrt-feed/keys/dllkids-feed.pub.pem`
 
-> 该源是完整的第三方源，除 Clashoo 外还提供 `mihomo`、`luci-app-ssr-plus`、
-> `luci-app-passwall` / `passwall2`、`luci-app-nikki`、`sing-box`、`geoview` 等。
-> 本分支默认只启用 Clashoo；`rockchip/build.sh` 在检测到 `luci-app-ssr-plus` 时会
+> 该源是完整的第三方源，除默认启用的 nikki 外还提供 `clashoo`、`mihomo`、
+> `luci-app-ssr-plus`、`luci-app-passwall` / `passwall2`、`luci-app-openclash`、
+> `sing-box`、`geoview` 等。**这些代理插件互斥，只能启用一个**（见 README
+> 「代理插件互斥」）。`rockchip/build.sh` 在检测到 `luci-app-ssr-plus` 时会
 > 顺带加入该源的 `mihomo` 包作为内核（不再手动下载固定版本二进制）。
 >
 > ⚠️ 该源的第三方 LuCI 应用**没有**独立中文语言包（源内 613 个包中只有 `clashoo`
 > 与 `eqos` 两个 i18n 包），启用它们时**不要**加 `luci-i18n-xxx-zh-cn`，
 > 否则 `make image` 会因找不到包而失败。
 
-> ⚠️ Clashoo 与 **nikki** 配置冲突，不要同时集成。
-> ⚠️ Clashoo 依赖的 kmod（`kmod-tun`、`kmod-nft-tproxy`、`kmod-nft-socket`、
+> ⚠️ 代理插件互斥：nikki / clashoo / openclash / passwall(2) / ssr-plus / daed …
+> 只能启用一个，**先停旧的再开新的**。`rockchip/build.sh` 有构建期硬校验
+> （≥2 套直接 `exit 1`），详见 README「代理插件互斥」。
+> ⚠️ 代理插件依赖的 kmod（`kmod-tun`、`kmod-nft-tproxy`、`kmod-nft-socket`、
 > `kmod-inet-diag` 等）由 ImmortalWrt 官方 kmods 源解析，不由第三方源提供。
 
-> ℹ️ **设备端也可以直接安装/升级 Clashoo 系包。**
+> ℹ️ **设备端也可以直接安装/升级该源的包。**
 > `rockchip/build.sh` 把该源与公钥写在两处：
 > - **构建期**：源追加到 Image Builder 的 `repositories`、公钥放进 `keys/`
 >   （`make image` 用 `--repositories-file` / `--keys-dir` 读取）。这两处**不会**进固件。
 > - **随固件发布**：同时写进 `files/`，落到固件内的
 >   `/etc/apk/repositories.d/customfeeds.list` 与 `/etc/apk/keys/dllkids-feed.pub.pem`。
 >   （`customfeeds.list` 是 `apk` 包为「用户自加第三方源」预留的 conffile，
->   上游默认就是三行注释占位；本分支保留其原样并在末尾追加 Clashoo 源。）
+>   上游默认就是三行注释占位；本分支保留其原样并在末尾追加 dllkids 源。）
 >
 > 因此设备上可以直接 `apk update` / `apk add <包名>` / `apk upgrade`。
 > 注意固件启用了 `CONFIG_SIGNATURE_CHECK`，公钥缺失会被判为 `UNTRUSTED signature`。
@@ -63,7 +68,7 @@
    （如 `ENABLE_APPS="filemanager rclone ttyd"`），脚本会自动展开为
    `luci-app-<短名>` + `luci-i18n-<短名>-zh-cn`；文件末尾列出全部可用短名。
    少数非 `luci-app-*` 形式的包（`luci-proto-*` / `luci-mod-*` / openclash /
-   passwall 等）取消对应行注释即可。第三方插件仅 Clashoo，已默认启用。
+   passwall 等）取消对应行注释即可。第三方插件默认仅 nikki（换栈见 README「代理插件互斥」）。
    > ⚠️ **例外：已内置中文的 app 包。** `argon-config` / `cpufreq` / `diskman`
    > 这三个 app 包在 ImmortalWrt 官方源里（版本 `27.150.x`）**自带简体中文**
    > （内含 `usr/lib/lua/luci/i18n/*.zh-cn.lmo` 与 `etc/uci-defaults/luci-i18n-*`）。
@@ -75,6 +80,6 @@
    > 未内置中文，仍照常搭配独立 i18n 包，不会冲突。
 3. **新增第三方源**：
    把源的 `packages.adb` 全路径追加到 `repositories`，公钥放入 `keys/`（构建期可用）；
-   若还要让**设备端**能安装，再按 `rockchip/build.sh` 里 Clashoo 的写法，把源写进
+   若还要让**设备端**能安装，再按 `rockchip/build.sh` 里 dllkids 源的写法，把源写进
    `files/etc/apk/repositories.d/customfeeds.list`（apk 包预留的第三方源 conffile），
    公钥写进 `files/etc/apk/keys/`。

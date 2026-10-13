@@ -6,7 +6,7 @@
 # 拼接，最终由 build.sh 传给 `make image PACKAGES="..."`。
 #
 # 用法：
-#   1. 第三方插件（Clashoo）已默认启用，见「一」，一般无需改动。
+#   1. 第三方插件（默认 nikki）已默认启用，见「一」，一般无需改动。
 #   2. 官方源软件：把短名填进「二」2.1 的 ENABLE_APPS（空格分隔）即可，脚本会
 #      自动展开为 luci-app-<短名> + luci-i18n-<短名>-zh-cn（后者依赖前者，
 #      两者会一起装上）。可用短名见「三」。
@@ -16,10 +16,25 @@
 #
 # 注意事项：
 #   1. 【第三方插件】必须先注入其对应的第三方源，否则 make image 会因找不到包
-#      而失败。本分支已注入 kenzok8 / dllkids 的 APK 源（默认只启用 Clashoo）；
+#      而失败。本分支已注入 kenzok8 / dllkids 的 APK 源（默认只启用 nikki）；
 #      自行加源方法见 README「如何自行增加第三方源」。
-#   2. 【代理类插件互斥】clashoo / nikki / openclash / passwall / ssr-plus
-#      的配置互相冲突，只能启用其中一个。
+#   2. 【代理类插件互斥 —— 已由构建期硬校验兜底】
+#      下面这些包**全部是「透明代理接管型」**，只能启用其中一个（共 27 套）：
+#        nikki / clashoo / openclash / passwall / passwall2 / ssr-plus /
+#        homeproxy / dae / daed / daed-next / daede /
+#        shadowsocks / shadowsocks-libev / shadowsocks-rust /
+#        redsocks / redsocks2 / domain-proxy / xray / v2raya /
+#        ss-redir / nekobox / honk / jederproxy / xjay /
+#        mproxy / miniproxy / fchomo
+#      ⚠ **判定真源是 rockchip/build.sh 的 `_PROXY_STACKS` 表（27 条）**。
+#        该表与 README「代理插件互斥」表、本清单**三处必须同步**，改一处就要改三处。
+#      构建期检测到 ≥2 套会直接 exit 1（实验用途可用 ALLOW_PROXY_CONFLICT=1 放行）。
+#      ⚠ 判定是**整词**匹配，故 luci-app-passwall2 ≠ luci-app-passwall、
+#        luci-app-xray-status 是 luci-app-xray 的配套状态页（不算独立栈，可共存）。
+#      ✅ 不算冲突（可共存）：luci-app-xray-status / microsocks / gost /
+#        softethervpn / luci-app-ssrserver-python / luci-app-v2ray-server /
+#        tun2socks / smartdns / mosdns / chinadns-ng / adguardhome / dnsproxy /
+#        dnscrypt-proxy2 / ikoolproxy / haproxy-tcp / geoview。
 #   3. 本分支不集成 store / istore，故不提供依赖 istore 的插件选项。
 #   4. 硬路由 / 小闪存设备请酌情启用；包过多会导致固件过大或构建失败。
 #   5. 「三」的短名已对 ImmortalWrt 25.12 官方源（aarch64_generic，共 11428 个包）
@@ -36,15 +51,16 @@
 # =============================================================================
 # 一、第三方插件
 # -----------------------------------------------------------------------------
-# rockchip/build.sh 注入的第三方源（25.12 / aarch64_generic）除 Clashoo 外，
-# 还提供 luci-app-ssr-plus / passwall2 / nikki / openclash / mihomo 等，
+# rockchip/build.sh 注入的第三方源（25.12 / aarch64_generic）除本分支默认启用的
+# nikki 外，还提供 luci-app-ssr-plus / passwall2 / clashoo / openclash / mihomo 等，
 # 需要时取消 1.2 的注释即可，无需另外加源。
 #
 # ⚠ 该源的第三方 LuCI 应用**没有**独立中文语言包（源内 613 个包里只有
 #   clashoo 与 eqos 两个 i18n 包），所以不要给它们加 luci-i18n-xxx-zh-cn，
 #   否则 make image 会因找不到包而失败。
 # =============================================================================
-# 【当前已启用】Clashoo —— ⚠ 与 nikki 配置冲突，不可同时启用
+# 【当前已启用】nikki（eBPF / TUN 体系）—— ⚠ 与 Clashoo / openclash 等互斥，
+# 换栈时必须先把下面这行注释掉，再取消目标栈那一行的注释（见文件头「注意事项 2」）。
 #CUSTOM_PACKAGES="$CUSTOM_PACKAGES clashoo luci-app-clashoo luci-i18n-clashoo-zh-cn"
 
 # -----------------------------------------------------------------------------
@@ -57,7 +73,7 @@
 #CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-ssr-plus xray-core naiveproxy kmod-nft-tproxy kmod-nft-socket"
 # PassWall2
 #CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-passwall2 geoview xray-core sing-box hysteria kmod-nft-tproxy kmod-nft-socket"
-# nikki（核心包名就叫 nikki）—— ⚠ 与 Clashoo 配置冲突，不可同时启用
+# nikki（核心包名就叫 nikki）—— ⚠ 透明代理接管型，与其他代理栈互斥，不可同时启用
 CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-nikki nikki kmod-tun kmod-inet-diag kmod-nft-tproxy kmod-nft-socket"
 #
 # OpenClash 不列在这里，它在「二」2.2（内核由 rockchip/build.sh 处理）。
@@ -95,7 +111,7 @@ unset _app
 #CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-mod-battstatus luci-i18n-battstatus-zh-cn"
 #CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-mod-dashboard luci-i18n-dashboard-zh-cn"
 #CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-mod-dsl luci-i18n-dsl-zh-cn"
-# 代理（⚠ 与 Clashoo 互斥，只能选一个）
+# 代理（⚠ 与其他代理栈互斥，只能选一个）
 #CUSTOM_PACKAGES="$CUSTOM_PACKAGES geoview xray-core sing-box hysteria luci-i18n-passwall-zh-cn"
 #CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-openclash luci-compat kmod-tun kmod-inet-diag kmod-nft-tproxy bash curl ip-full unzip"
 

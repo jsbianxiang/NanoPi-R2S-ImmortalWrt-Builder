@@ -78,7 +78,9 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    # ubuntu-22.04 已于 2026-09 进入 GitHub 退役流程（deprecated），
+    # 用 ubuntu-latest（当前为 24.04）避免 brownout 期构建随机失败。
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout code
@@ -125,11 +127,19 @@ jobs:
           echo "ROOTFS_SIZE=$ROOTFS_SIZE" >> $GITHUB_ENV
           luci_version="${{ inputs.luci_version }}"
           echo "Building for profile: $PROFILE"
+          # ⚠ custom/ 必须挂到 /home/build/immortalwrt/files/etc/immortalwrt-builder/，
+          #   不能挂到 .../files/etc/config/：
+          #   libuci 会 glob 整个 /etc/config/ 目录，只跳过文件名含 `.` 的条目
+          #   （openwrt/uci file.c: get_filename()），其余一律当 uci 配置包解析。
+          #   custom_router_ip.txt / wan-settings 这类辅助文件放在 /etc/config/
+          #   会让**任何** uci 调用（含 LuCI 软件包页）报
+          #       uci: Parse error (invalid command) at line 1, byte 0
+          #   详见 rockchip/build.sh 顶部说明。
           docker run --rm -i \
               --user root \
               -v "${{ github.workspace }}/bin:/home/build/immortalwrt/bin" \
               -v "${{ github.workspace }}/files:/home/build/immortalwrt/files" \
-              -v "${{ github.workspace }}/custom:/home/build/immortalwrt/files/etc/config" \
+              -v "${{ github.workspace }}/custom:/home/build/immortalwrt/files/etc/immortalwrt-builder" \
               -v "${{ github.workspace }}/rockchip/imm.config:/home/build/immortalwrt/.config" \
               -v "${{ github.workspace }}/shell:/home/build/immortalwrt/shell" \
               -v "${{ github.workspace }}/rockchip/build.sh:/home/build/immortalwrt/build.sh" \
@@ -148,24 +158,57 @@ jobs:
           else
             WAN_LINE="- 🌐 **WAN 接入**: DHCP（由上级设备自动分配地址）"
           fi
+          BUILD_TIME="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           cat > ${{ github.workspace }}/router-info.md <<EOF
           ## 📡 R2S 固件信息
 
           - ✳️ **机型**: NanoPi R2S (Rockchip RK3328)
-          - 🏷️ **Image Builder 版本**: ${{ inputs.luci_version }}
+          - 🏷️ **Image Builder 版本**: ImmortalWrt ${{ inputs.luci_version }}
           - 🏠 **后台地址**: ${{ inputs.custom_router_ip }}
           ${WAN_LINE}
           - 🧬 **WAN6**: DHCPv6（用于获取 PD 前缀）
           - 👤 **用户名**: root
           - 🔑 **密码**: 无
+          - 🔖 **构建提交**: ${{ github.sha }}
+          - 🔢 **构建序号**: #${{ github.run_number }}
+          - 🕒 **构建时间**: ${BUILD_TIME}
+
+          ---
+
+          > ⚠️ 本 Release 的 tag 固定为 \`Autobuild\`，每次构建都会**原地覆盖**附件，
+          > 所以这里永远只有最新一份固件。该标签也不会随构建移动，
+          > **上面的「构建提交」才是本次固件的真实来源**。
+          >
+          > 需要**历史版本**请到
+          > [Actions](https://github.com/${{ github.repository }}/actions/workflows/build-rockchip-immortalWrt-25.12.x.yml)
+          > 页面，点进对应时间的那次运行，在最下方 **Artifacts** 区下载
+          > \`r2s-immortalwrt-<版本>-r<序号>\`（保留 90 天）。
           EOF
 
+      # 归档：滚动 Release 只留最新一份，历史版本靠这里的 Artifact。
+      # 名字带版本号与 run_number，Actions 页里可区分。
+      # retention-days 上限 90（GitHub 默认），如需更长要在仓库设置里改。
+      - name: Archive build as workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: r2s-immortalwrt-${{ inputs.luci_version }}-r${{ github.run_number }}
+          path: ${{ github.workspace }}/bin/targets/rockchip/armv8/*.img.gz
+          if-no-files-found: error
+          retention-days: 90
+
+      # 滚动 Release：供「最新固件」一键下载。
+      # tag_name 写死为 Autobuild ⇒ 同 tag 已存在时 action-gh-release 只更新
+      # 该 release（overwrite_files 默认 true 覆盖同名附件、append_body 默认
+      # false 重写正文），不会新建 tag/release —— 这正是「只有一条 release」
+      # 的原因，历史版本请用上面的 Artifact。
+      # fail_on_unmatched_files：产物缺失时直接失败，避免发布一个 0 附件的 release。
       - name: Upload ImmortalWrt as release assets
         uses: softprops/action-gh-release@v3
         with:
           tag_name: Autobuild
           name: ImmortalWrt-R2S
           body_path: ${{ github.workspace }}/router-info.md
+          fail_on_unmatched_files: true
           files: |
             ${{ github.workspace }}/bin/targets/rockchip/armv8/*.img.gz
           token: ${{ secrets.GITHUB_TOKEN }}
