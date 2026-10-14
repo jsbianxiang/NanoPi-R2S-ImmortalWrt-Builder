@@ -445,6 +445,12 @@ python3 shell/audit.py --online   # 追加在线检查（拉官方源 + dllkids 
 3. **判定** —— 闭包里出现**第二个代理栈的前端**⇒ FAIL；闭包里的虚拟名被**另一套栈**
    提供 ⇒ WARN（择优安装风险，附版本与原因）。
 
+> **闭包条数 ≠ 镜像里已装包数，这是预期、不是漏抓。** 当前闭包实测 ~156 个，而镜像
+> `/lib/apk/db/installed` 是 262 个 —— 差额来自 **Image Builder 自己追加的默认包**
+> （luci / uhttpd 等），它们既不在显式 `PACKAGES` 里，检查 15 也无从展开。
+> 换言之检查 15 只覆盖「显式 + 显式的依赖」这两层，**不覆盖「IB 默认」那一层**；
+> 后者只能在产物侧用 `shell/unpack_fw.py packages` 核对（下面的解包取证小节）。
+
 配套的 `shell/apkmeta.py` 负责解析 apk-tools v3 的 **ADB 容器**（`.apk` 不是
 gzip-tar，文件头是 `ADBd` + 裸 deflate）。它的 `D:` / `p:` 拆分规则与已知局限都写在
 模块 docstring 里；"X 是否提供虚拟名 Y" 这类判断请用 `Y in m["names"]`（不依赖分类）。
@@ -481,6 +487,10 @@ python3 shell/unpack_fw.py xxx.img.gz proxy             # 前端 / 内核 / prov
 已装包的**权威**清单是镜像里的 `/lib/apk/db/installed`（`/etc/apk/world` 只是显式
 顶层清单，依赖闭包里进来的都不在上面）—— 两者都只能解包才看得到，所以归档产物时
 值得顺手跑一次 `packages --json`。
+
+它与上面的检查 15 是**互补**关系，别把两个数字混为一谈：闭包 ~156 个（源侧、可
+离线复现、只含显式及其依赖）vs 已装 262 个（产物侧，**含 Image Builder 默认包**）。
+差额即「IB 默认那一层」，正是检查 15 看不见的部分。
 
 ⚠ Git Bash 会把以 `/` 开头的参数改写成 Windows 路径 ⇒ 在本仓库的 bash 环境里跑之前
 先 `export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'`。
