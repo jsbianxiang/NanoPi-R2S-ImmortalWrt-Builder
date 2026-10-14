@@ -51,9 +51,11 @@
 #      ⚠ 注意：其中 haproxy-tcp / nft-qos / nikki 在 **dllkids 第三方源**里是有
 #        `luci-app-` 前端的，只是**官方源没有** —— 本清单按官方源校验，故不列入；
 #        要启用它们请走「一、第三方插件」（受代理互斥约束）。
-#   6. 【已内置中文的 app 包】argon-config / cpufreq / diskman 这三个 app 包在
-#      ImmortalWrt 官方源里（版本 27.150.x）**自带简体中文**，启用它们时**不能**再配
-#      独立的 luci-i18n-<短名>-zh-cn（26.236.x），否则 apk 会因文件冲突报
+#   6. 【已内置中文的 app 包】argon-config / cpufreq / diskman 这三个短名的 app 包
+#      在 **dllkids 第三方源**里有 27.150.x 版本，包内**自带简体中文**
+#      （usr/lib/lua/luci/i18n/<名>.zh-cn.lmo）；官方源同名包是 26.236.x，不含中文。
+#      apk 取版本高者 ⇒ 实际装的是 dllkids 那份，故启用它们时**不能**再配独立的
+#      luci-i18n-<短名>-zh-cn（26.236.x），否则 apk 会因文件冲突报
 #      "trying to overwrite ... owned by ..." 导致 make image 失败。
 #      2.1 的短名展开已用 I18N_BUILTIN 列表自动规避，无需手工处理。
 # =============================================================================
@@ -96,10 +98,12 @@ CUSTOM_PACKAGES="$CUSTOM_PACKAGES luci-app-nikki nikki kmod-tun kmod-inet-diag k
 ENABLE_APPS=""
 # 示例：ENABLE_APPS="filemanager rclone ttyd"
 
-# ⚠ 例外：下列 app 包在 ImmortalWrt 官方源里**已内置简体中文**（包版本 27.150.x），
+# ⚠ 例外：下列短名的 app 包由 **dllkids 第三方源**提供 27.150.x 版本，**已内置简体中文**
+#   （官方源同名包为 26.236.x，不含中文；apk 取版本高者 ⇒ 实际装的是 dllkids 那份）。
 #   若再搭配独立的 luci-i18n-<短名>-zh-cn（26.236.x），apk 会因文件冲突报
 #     ERROR: luci-i18n-xxx-zh-cn: trying to overwrite ... owned by luci-app-xxx
 #   从而中断 make image。故这些短名只展开 luci-app-<短名>，不再加 i18n 包。
+#   ⚠ 这三项必须同时出现在下方「三、可用短名清单」里（audit.py 会校验该包含关系）。
 I18N_BUILTIN="argon-config cpufreq diskman"
 
 for _app in $ENABLE_APPS; do
@@ -173,4 +177,10 @@ unset _app
 #   snmpd                     mosquitto                 pagekitec                 3cat                      3ginfo-lite
 #   acl                       acme                      appfilter                 example                   xinetd
 #   xlnetacc                  travelmate                squid
+#
+# --- 主题 / CPU 调优 ---
+#   这两个短名的 app 包由 dllkids 第三方源提供 27.150.x 版本、包内自带简体中文，
+#   脚本**不会**再展开 luci-i18n-<名>-zh-cn（加了会文件冲突，见文件头「注意事项 6」）。
+#   argon-config ★已内置中文（同 diskman，不再另装 i18n 包）
+#   cpufreq ★已内置中文（同 diskman，不再另装 i18n 包）
 #

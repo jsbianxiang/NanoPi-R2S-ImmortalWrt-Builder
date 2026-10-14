@@ -112,9 +112,13 @@ NanoPi R2S 专用：基于 GitHub Actions + ImmortalWrt 官方 Image Builder 的
   LAN 地址为工作流中填写的 `custom_router_ip`。对应关系见下节。
 - **默认主题：Argon**（ImmortalWrt 官方默认）。固件同时装了 Bootstrap，
   可在 LuCI「系统 → 系统 → 语言和界面」里切换 —— 两个主题各带一个
-  `/etc/uci-defaults/30_luci-theme-*` 脚本会争抢 `luci.main.mediaurlbase`，
-  其中 Argon 那个是**无条件**改写、且按文件名字母序先于 Bootstrap 执行，
-  所以默认会落到 Argon。`99-custom.sh` **不干预**主题；
+  `/etc/uci-defaults/30_luci-theme-*` 脚本，都会写 `luci.main.mediaurlbase`，
+  且都只在**全新刷机**（`PKG_UPGRADE != 1`）时才生效：
+  Argon 那个在 `luci.themes.Argon` 未注册时直接写入 argon；
+  Bootstrap 那个的 `set_opt` **只在键不存在时才写**（`uci -q get` 成功即跳过）。
+  按文件名字母序 `30_luci-theme-argon` 先执行 ⇒ 它先写入 `mediaurlbase`，
+  随后 Bootstrap 检测到该键已存在、不再覆盖 ⇒ 默认落到 Argon。
+  `99-custom.sh` **不干预**主题；
   若想让默认变成 Bootstrap，在 `99-custom.sh` 末尾追加两行即可：
   `uci set luci.main.mediaurlbase='/luci-static/bootstrap'` 与 `uci commit luci`。
 - **网络 / DHCP / 防火墙等一律保持 ImmortalWrt 官方镜像默认** ——
@@ -338,11 +342,12 @@ ALLOW_PROXY_CONFLICT=1 bash rockchip/build.sh
 
 - 把要装的**短名**填进 `ENABLE_APPS`（空格分隔），脚本会自动展开为
   `luci-app-<短名>` + `luci-i18n-<短名>-zh-cn`（后者依赖前者，两者一起装上）。
-  例：`ENABLE_APPS="filemanager rclone ttyd"`。文件末尾列出了全部 132 个可用短名。
-- **例外**：`argon-config` / `cpufreq` / `diskman` 三个 app 包在官方源里
-  （版本 `27.150.x`）**已内置简体中文**，脚本只装 app 包、不再补
-  `luci-i18n-<短名>-zh-cn`（`26.236.x`）—— 否则 apk 会因文件冲突报
-  `trying to overwrite ... owned by luci-app-...` 使 `make image` 失败。
+  例：`ENABLE_APPS="filemanager rclone ttyd"`。文件末尾列出了全部 134 个可用短名。
+- **例外**：`argon-config` / `cpufreq` / `diskman` 三个短名的 app 包由
+  **dllkids 第三方源**提供 `27.150.x` 版本、**已内置简体中文**（官方源同名包为
+  `26.236.x`，不含中文；apk 取版本高者 ⇒ 实际装的是 dllkids 那份）。
+  脚本只装 app 包、不再补 `luci-i18n-<短名>-zh-cn`（`26.236.x`）—— 否则 apk 会因
+  文件冲突报 `trying to overwrite ... owned by luci-app-...` 使 `make image` 失败。
 - 少数不是 `luci-app-<短名>` 形式的包（`luci-proto-*` / `luci-mod-*` /
   openclash / passwall 等），取消对应行注释即可。
 
@@ -415,10 +420,6 @@ python3 shell/audit.py --online   # 追加在线检查（拉官方源 + dllkids 
   （免得源站抖动就变红）；但源可达而数字对不上，判 FAIL。
 - **CI**：`.github/workflows/audit.yml`（**只读**，`permissions.contents: read`）
   在 push 到 `main` 与 PR 时自动运行，改动上述任一文件即触发。
-
-> ℹ️ 已知的一项提示（非错误）：`I18N_BUILTIN` 里的 `argon-config` / `cpufreq`
-> **不在「三、可用短名清单」内**，所以这两条豁免当前不生效（清单内的只有 `diskman`）。
-> 脚本对此只报 INFO 不报 FAIL —— 属前向兼容：将来若把它们加进清单，豁免会自动生效。
 
 ---
 

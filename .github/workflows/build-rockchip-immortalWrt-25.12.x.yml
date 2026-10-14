@@ -80,9 +80,11 @@ env:
 
 jobs:
   build:
-    # ubuntu-22.04 已于 2026-09 进入 GitHub 退役流程（deprecated），
-    # 用 ubuntu-latest（当前为 24.04）避免 brownout 期构建随机失败。
-    runs-on: ubuntu-latest
+    # 固定为 ubuntu-24.04：① ubuntu-22.04 已于 2026-09 进入退役流程（deprecated）；
+    # ② ubuntu-latest 于 2026-10-19 迁移到 Ubuntu 26，构建行为会随 GitHub 静默漂移。
+    # 本构建实际在 immortalwrt/imagebuilder 容器内执行，宿主只需稳定、可预期。
+    # 将来要升级 runner，改这一行即可（升级后请重跑一次正向构建验证）。
+    runs-on: ubuntu-24.04
 
     # 用户输入统一经 env 中转，**不要**把 ${{ inputs.* }} 直接拼进 shell/heredoc：
     # 输入含 " / $( ) / ; 时可注入命令。经 env 传递后仅作为环境变量值参与，

@@ -10,7 +10,8 @@ on:
 
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    # 固定 runner 版本，避免 ubuntu-latest 迁移（2026-10-19 → Ubuntu 26）带来的静默漂移。
+    runs-on: ubuntu-24.04
     permissions:
       actions: write
 

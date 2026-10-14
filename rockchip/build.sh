@@ -71,13 +71,16 @@ PACKAGES="$PACKAGES bind-tools"
 PACKAGES="$PACKAGES ca-certificates"
 PACKAGES="$PACKAGES openssh-sftp-server"
 # ---- 中文语言包 ----
-# ⚠ ImmortalWrt 官方源里，下面三个 app 包（27.150.x）**已内置简体中文**
-#   （自带 usr/lib/lua/luci/i18n/*.zh-cn.lmo 与 etc/uci-defaults/luci-i18n-*）。
-#   若再显式安装同名的独立 i18n 包（26.236.x），apk 会因文件冲突报
-#     ERROR: luci-i18n-xxx-zh-cn-...: trying to overwrite ... owned by luci-app-xxx-...
-#   直接中断 make image（package_install 返回 Error 3）。故这三个只装 app 包，
-#   中文由包本身提供：
+# ⚠ 下面三个 app 包**已内置简体中文**，不要再配同名的独立 i18n 包：
 #     luci-app-diskman / luci-app-cpufreq / luci-app-argon-config
+#   机制：这三个包在 **dllkids 第三方源**里有 27.150.x 版本，包内自带
+#     usr/lib/lua/luci/i18n/<名>.zh-cn.lmo 与 etc/uci-defaults/luci-i18n-<名>-zh-cn
+#   （官方源同名包是 26.236.x、diskman 为 0.2.13-r1，**不含**中文）；
+#   而 apk **取版本高者** ⇒ 实际装上的是 dllkids 的 27.150.x 构建。
+#   此时若再显式安装官方源的 luci-i18n-<名>-zh-cn（26.236.x），apk 会因文件冲突报
+#     ERROR: luci-i18n-xxx-zh-cn-...: trying to overwrite ... owned by luci-app-xxx-...
+#   直接中断 make image（package_install 返回 Error 3）。
+#   （已实测：构建日志显示装入的正是 27.150.62553~79d9f36，且未装同名 i18n 包。）
 #   其余 app 包（26.236.x，如 filemanager / ttyd / firewall / package-manager）
 #   未内置中文，仍照常搭配独立的 luci-i18n-<名>-zh-cn 包，不会冲突。
 PACKAGES="$PACKAGES luci-app-diskman"

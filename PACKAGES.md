@@ -70,9 +70,11 @@
    少数非 `luci-app-*` 形式的包（`luci-proto-*` / `luci-mod-*` / openclash /
    passwall 等）取消对应行注释即可。第三方插件默认仅 nikki（换栈见 README「代理插件互斥」）。
    > ⚠️ **例外：已内置中文的 app 包。** `argon-config` / `cpufreq` / `diskman`
-   > 这三个 app 包在 ImmortalWrt 官方源里（版本 `27.150.x`）**自带简体中文**
-   > （内含 `usr/lib/lua/luci/i18n/*.zh-cn.lmo` 与 `etc/uci-defaults/luci-i18n-*`）。
-   > 若再装同名的独立语言包 `luci-i18n-<短名>-zh-cn`（`26.236.x`），apk 会因
+   > 这三个短名的 app 包由 **dllkids 第三方源**提供 `27.150.x` 版本，**自带简体中文**
+   > （内含 `usr/lib/lua/luci/i18n/*.zh-cn.lmo` 与 `etc/uci-defaults/luci-i18n-*`）；
+   > 官方源同名包是 `26.236.x`（`diskman` 为 `0.2.13-r1`），**不含**中文。
+   > 由于 apk **取版本高者**，实际装上的是 dllkids 的 `27.150.x` 构建。
+   > 若再装官方源同名的独立语言包 `luci-i18n-<短名>-zh-cn`（`26.236.x`），apk 会因
    > 文件冲突报 `ERROR: ... trying to overwrite ... owned by luci-app-...`，
    > 使 `make image` 以 `package_install Error 3` 失败。
    > 脚本已用 `I18N_BUILTIN` 列表自动规避（这些短名只装 app 包、不加 i18n）。
