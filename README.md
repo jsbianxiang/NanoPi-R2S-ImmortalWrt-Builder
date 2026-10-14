@@ -379,6 +379,8 @@ rockchip/
 shell/
   custom-packages.sh                      # 可选软件包开关（第三方插件默认仅 nikki）
   audit.py                                # 一致性自检脚本（离线 + 在线两类检查）
+  apkmeta.py                              # apk-tools v3 ADB 容器元数据解析（供 audit.py / unpack_fw.py）
+  unpack_fw.py                            # 固件解包取证（MBR + ext4 + apk 已装数据库，纯 Python）
 README.md                                 # 本文件
 PACKAGES.md                               # 软件包来源与启用方式说明
 SUPPORT.md                                # 支持的机型列表
@@ -414,12 +416,74 @@ python3 shell/audit.py --online   # 追加在线检查（拉官方源 + dllkids 
 | 类别 | 检查项 |
 | --- | --- |
 | 离线 | 三处代理清单同步（套数 / marker 零差集）· `_PROXY_OK` 白名单三处一致 · 短名清单格式与条数 · 工作流输入不直插 shell（`${{ inputs.* }}` 必须经 `env:` 中转）· 工作流 `IN_*` 变量已定义 · **构建期写入路径必须「已跟踪」或「已忽略」**（防止本地跑一次构建就脏工作区）· 全树 0 处 CRLF · `bash -n` 语法 |
-| 在线 | dllkids 可达性与包数 **vs 文档声明** · 官方 5 个 arch feed + target + kmods 总数 **vs 文档声明** · `_PROXY_STACKS` 全部 marker 是否存在（黑名单无死条目）· `_PROXY_OK` 各项是否存在 · 短名清单的 `luci-app-*` / `luci-i18n-*` 是否都存在 |
+| 在线 | dllkids 可达性与包数 **vs 文档声明** · 官方 5 个 arch feed + target + kmods 总数 **vs 文档声明** · `_PROXY_STACKS` 全部 marker 是否存在（黑名单无死条目）· `_PROXY_OK` 各项是否存在 · 短名清单的 `luci-app-*` / `luci-i18n-*` 是否都存在 · **PACKAGES 依赖闭包**（见下） |
 
 - **退出码**：`0` = 无 FAIL，`1` = 有 FAIL。**在线检查里「源站不可达」只记 WARN 不判 FAIL**
-  （免得源站抖动就变红）；但源可达而数字对不上，判 FAIL。
+  （免得源站抖动就变红）；但源可达而数字对不上，判 FAIL。只取到**一个**源时，存在性检查
+  也降级为 WARN —— 缺项很可能住在没取到的那个源里（`tinyproxy` / `https-dns-proxy`
+  就在官方 luci feed、不在 dllkids），判 FAIL 就是误报。
 - **CI**：`.github/workflows/audit.yml`（**只读**，`permissions.contents: read`）
   在 push 到 `main` 与 PR 时自动运行，改动上述任一文件即触发。
+- **耗时**：检查 15（依赖闭包）要读 100+ 个 `.apk` 的前 32 KB 元数据，
+  在线全跑约 1–4 分钟；内置 `CLOSURE_MAX_PKGS=500` / `CLOSURE_BUDGET_S=420` 双上限。
+
+### 检查 15：PACKAGES 依赖闭包（为什么需要它）
+
+构建期硬校验只看**显式** `PACKAGES`，看不到**依赖**里冒出来的东西。而 apk 的依赖
+解析会"择优"——某个包声明提供 `mihomo=<更高版本>`，`nikki` 的 `D: mihomo` 就被它
+满足，于是**另一套代理栈的内核被装了进来**，显式清单却毫无痕迹
+（2026-10-14 产物级解包已证实：`luci-app-nikki` 单独在场，`clashoo` 也被装上，
+但 `/etc/config/clashoo` 是 `enable 0`、前端未启用）。
+
+检查 15 用三步把这类盲区变成可见：
+
+1. **真实复现 PACKAGES** —— 用 bash 跑一遍 `shell/custom-packages.sh` + `build.sh`
+   的静态行（不自己解析 shell），得到展开后的显式包清单；
+2. **BFS 解依赖闭包** —— 从这 8 个源（5 个 arch feed + target + kmods + dllkids）
+   建包名→URL 目录，对每个包只读 `.apk` 的**前 32 KB**（元数据在 deflate 流最前端），
+   沿 `D:` 一路展开到不动点；
+3. **判定** —— 闭包里出现**第二个代理栈的前端**⇒ FAIL；闭包里的虚拟名被**另一套栈**
+   提供 ⇒ WARN（择优安装风险，附版本与原因）。
+
+配套的 `shell/apkmeta.py` 负责解析 apk-tools v3 的 **ADB 容器**（`.apk` 不是
+gzip-tar，文件头是 `ADBd` + 裸 deflate）。它的 `D:` / `p:` 拆分规则与已知局限都写在
+模块 docstring 里；"X 是否提供虚拟名 Y" 这类判断请用 `Y in m["names"]`（不依赖分类）。
+
+---
+
+## 固件解包取证（`shell/unpack_fw.py`）
+
+本机没有 7-Zip / `unsquashfs` / `debugfs`，而"某条设计断言是否真的成立"只能在
+**产物**里被证实，于是有了这个纯 Python 工具：
+
+```bash
+# 分区表 + 定位 rootfs（sysupgrade.img 是 MBR，不是 GPT）
+python3 shell/unpack_fw.py immortalwrt-...-sysupgrade.img.gz part
+
+# 把 rootfs 分区落盘（反复查同一个固件时先做一次）
+python3 shell/unpack_fw.py xxx.img.gz extract rootfs.img
+
+# 之后直接用裸文件系统读，省掉每次 1 GiB 的解压
+python3 shell/unpack_fw.py rootfs.img --offset 0 ls /etc/config
+python3 shell/unpack_fw.py rootfs.img --offset 0 cat /etc/config/firewall
+python3 shell/unpack_fw.py rootfs.img --offset 0 find 99-custom
+
+# apk 权威已装数据库 / 代理栈核查
+python3 shell/unpack_fw.py xxx.img.gz packages          # 262 个已装包逐条列出
+python3 shell/unpack_fw.py xxx.img.gz packages --json   # 机器可读
+python3 shell/unpack_fw.py xxx.img.gz proxy             # 前端 / 内核 / provides 摘要
+```
+
+支持 `part` / `extract` / `ls` / `cat` / `find` / `walk` / `packages` / `proxy`。
+镜像布局（NanoPi R2S / rockchip-armv8，实测）：MBR，`part1` idbloader/uboot 16 MiB
+@ LBA 65536，`part2` rootfs 1024 MiB @ LBA 131072，解压总长 1088 MiB。
+
+已装包的**权威**清单是镜像里的 `/lib/apk/db/installed`（`/etc/apk/world` 只是显式
+顶层清单，依赖闭包里进来的都不在上面）—— 两者都只能解包才看得到，所以归档产物时
+值得顺手跑一次 `packages --json`。
+
+⚠ Git Bash 会把以 `/` 开头的参数改写成 Windows 路径 ⇒ 在本仓库的 bash 环境里跑之前
+先 `export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'`。
 
 ---
 

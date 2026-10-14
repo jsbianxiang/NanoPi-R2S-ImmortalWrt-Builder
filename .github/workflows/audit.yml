@@ -15,9 +15,14 @@ name: Audit Repository Consistency
 #   - 构建期写入路径必须已跟踪或已忽略（防止脏工作区）
 #   - 换行符 / shell 语法
 #   - 在线：dllkids 与官方源的包数 vs 文档声明、marker 与短名存在性
+#   - 在线：**PACKAGES 依赖闭包**（BFS 解 .apk 元数据，查第二个代理前端）
 #
 # ⚠ 在线检查里「源站不可达」只记为 WARN，不判 FAIL（免得源站抖动就变红）；
-#   但源可达而数字对不上，判 FAIL。
+#   但源可达而数字对不上，判 FAIL。只取到一个源时，存在性检查同样降级为 WARN
+#   —— 缺项可能住在没取到的那个源里（tinyproxy / https-dns-proxy 就在官方
+#   luci feed、不在 dllkids），判 FAIL 就是误报。
+# ⚠ 依赖闭包那一步要读 100+ 个 .apk 的前 32 KB，慢的时候几分钟；脚本内置
+#   CLOSURE_MAX_PKGS / CLOSURE_BUDGET_S 双上限，CI 的 timeout-minutes: 15 够用。
 # =========================================================
 
 on:
@@ -29,6 +34,8 @@ on:
       - "rockchip/build.sh"
       - "shell/custom-packages.sh"
       - "shell/audit.py"
+      - "shell/apkmeta.py"
+      - "shell/unpack_fw.py"
       - "README.md"
       - "PACKAGES.md"
       - "files/**"
@@ -38,6 +45,8 @@ on:
       - "rockchip/build.sh"
       - "shell/custom-packages.sh"
       - "shell/audit.py"
+      - "shell/apkmeta.py"
+      - "shell/unpack_fw.py"
       - "README.md"
       - "PACKAGES.md"
       - "files/**"

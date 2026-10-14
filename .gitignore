@@ -17,3 +17,7 @@
 
 # 构建输出
 /bin/
+
+# Python 字节码缓存（本地跑 shell/*.py 产生，如 shell/audit.py、shell/unpack_fw.py）
+__pycache__/
+*.pyc
