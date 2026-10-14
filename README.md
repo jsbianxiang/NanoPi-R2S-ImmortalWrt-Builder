@@ -365,6 +365,7 @@ ALLOW_PROXY_CONFLICT=1 bash rockchip/build.sh
 .github/workflows/
   build-rockchip-immortalWrt-25.12.x.yml  # R2S 固件构建工作流
   clean-workflow.yml                      # 维护用：清理旧 Actions 运行记录
+  audit.yml                               # 只读：仓库一致性自检（跑 shell/audit.py）
 files/etc/uci-defaults/
   99-custom.sh                            # 首启初始化：只写工作流传入的 WAN/LAN 地址
 rockchip/
@@ -372,6 +373,7 @@ rockchip/
   imm.config                              # Image Builder 配置
 shell/
   custom-packages.sh                      # 可选软件包开关（第三方插件默认仅 nikki）
+  audit.py                                # 一致性自检脚本（离线 + 在线两类检查）
 README.md                                 # 本文件
 PACKAGES.md                               # 软件包来源与启用方式说明
 SUPPORT.md                                # 支持的机型列表
@@ -387,6 +389,36 @@ LICENSE                                   # 许可证
 > 的条目（`openwrt/uci` file.c: `get_filename()`），无后缀文件会被当成 uci 配置包解析，
 > 使**任何** uci 调用（含 LuCI 软件包页）报 `uci: Parse error (invalid command) at line 1, byte 0`。
 > 因此构建期辅助文件统一放 `/etc/immortalwrt-builder/`，详见 `rockchip/build.sh` 顶部说明。
+
+---
+
+## 一致性自检（`shell/audit.py`）
+
+本仓库有多处「**必须同步**」的声明 —— 最典型的是**代理互斥清单三处**（`rockchip/build.sh`
+的 `_PROXY_STACKS` / 本 README「代理插件互斥」表 / `shell/custom-packages.sh` 文件头
+「注意事项 2」），以及散落在文档里的**源侧数字**（dllkids 的包数、官方源的包总数）。
+这类内容靠人工维护必然滞后：改一处忘同步另外两处，或上游源变了而文档没跟。
+
+`shell/audit.py` 把这些检查固化下来，可在本地和 CI 重复运行：
+
+```bash
+python3 shell/audit.py            # 离线检查（不需要网络）
+python3 shell/audit.py --online   # 追加在线检查（拉官方源 + dllkids 目录）
+```
+
+| 类别 | 检查项 |
+| --- | --- |
+| 离线 | 三处代理清单同步（套数 / marker 零差集）· `_PROXY_OK` 白名单三处一致 · 短名清单格式与条数 · 工作流输入不直插 shell（`${{ inputs.* }}` 必须经 `env:` 中转）· 工作流 `IN_*` 变量已定义 · **构建期写入路径必须「已跟踪」或「已忽略」**（防止本地跑一次构建就脏工作区）· 全树 0 处 CRLF · `bash -n` 语法 |
+| 在线 | dllkids 可达性与包数 **vs 文档声明** · 官方 5 个 arch feed + target + kmods 总数 **vs 文档声明** · `_PROXY_STACKS` 全部 marker 是否存在（黑名单无死条目）· `_PROXY_OK` 各项是否存在 · 短名清单的 `luci-app-*` / `luci-i18n-*` 是否都存在 |
+
+- **退出码**：`0` = 无 FAIL，`1` = 有 FAIL。**在线检查里「源站不可达」只记 WARN 不判 FAIL**
+  （免得源站抖动就变红）；但源可达而数字对不上，判 FAIL。
+- **CI**：`.github/workflows/audit.yml`（**只读**，`permissions.contents: read`）
+  在 push 到 `main` 与 PR 时自动运行，改动上述任一文件即触发。
+
+> ℹ️ 已知的一项提示（非错误）：`I18N_BUILTIN` 里的 `argon-config` / `cpufreq`
+> **不在「三、可用短名清单」内**，所以这两条豁免当前不生效（清单内的只有 `diskman`）。
+> 脚本对此只报 INFO 不报 FAIL —— 属前向兼容：将来若把它们加进清单，豁免会自动生效。
 
 ---
 

@@ -1,0 +1,60 @@
+name: Audit Repository Consistency
+
+# =========================================================
+# 仓库一致性自检（**只读**：permissions.contents = read）
+#
+# 起因：2026-10-14 第 3 轮全量审计发现 9 个问题，其中 5 个是
+# 「注释里的数字 / 版本声明过期」——改一处忘了同步另外两处，
+# 或者源侧数据变了而文档没跟。本工作流把 shell/audit.py 固化进 CI，
+# 让这类漂移在 push 时就被发现，而不是等下一次人工审计。
+#
+# 检查内容见 shell/audit.py 的文件头注释。要点：
+#   - 三处代理互斥清单同步（build.sh / README / custom-packages.sh）
+#   - _PROXY_OK 白名单三处一致
+#   - 工作流输入不直插 shell（${{ inputs.* }} 必须经 env 中转）
+#   - 构建期写入路径必须已跟踪或已忽略（防止脏工作区）
+#   - 换行符 / shell 语法
+#   - 在线：dllkids 与官方源的包数 vs 文档声明、marker 与短名存在性
+#
+# ⚠ 在线检查里「源站不可达」只记为 WARN，不判 FAIL（免得源站抖动就变红）；
+#   但源可达而数字对不上，判 FAIL。
+# =========================================================
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "rockchip/build.sh"
+      - "shell/custom-packages.sh"
+      - "shell/audit.py"
+      - "README.md"
+      - "PACKAGES.md"
+      - "files/**"
+      - ".github/workflows/**"
+  pull_request:
+    paths:
+      - "rockchip/build.sh"
+      - "shell/custom-packages.sh"
+      - "shell/audit.py"
+      - "README.md"
+      - "PACKAGES.md"
+      - "files/**"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      # 离线检查 + 在线检查一次跑完（在线失败只 WARN，不会掩盖离线结论）。
+      - name: Run consistency audit
+        run: python3 shell/audit.py --online
