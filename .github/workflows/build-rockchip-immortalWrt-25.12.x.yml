@@ -13,7 +13,9 @@ name: Build R2S ImmortalWrt 25.12.x
 #
 # 网络模型：R2S 的 WAN 口接上级设备，默认采用【DHCP】接入（与 ImmortalWrt 官方
 #          默认一致）；如需固定地址，把 wan_proto 选为 static 改为静态 IP 接入。
-#          WAN6 保持 DHCPv6，以便从上级获取 IPv6 前缀委派（PD）。
+#          WAN6 保持 DHCPv6，以便从上级获取 IPv6 前缀委派（PD）——但注意：wan6
+#          由官方 config_generate 只在 dhcp 分支生成，**static 分支不生成 wan6**
+#          （WAN 无 IPv6），详见下方 Create info 步骤与 README。
 # =========================================================
 
 on:
@@ -82,6 +84,18 @@ jobs:
     # 用 ubuntu-latest（当前为 24.04）避免 brownout 期构建随机失败。
     runs-on: ubuntu-latest
 
+    # 用户输入统一经 env 中转，**不要**把 ${{ inputs.* }} 直接拼进 shell/heredoc：
+    # 输入含 " / $( ) / ; 时可注入命令。经 env 传递后仅作为环境变量值参与，
+    # 不进入 shell 解析；再配合下面的格式校验，注入面即被消除。
+    env:
+      IN_LUCI_VERSION: ${{ inputs.luci_version }}
+      IN_ROUTER_IP: ${{ inputs.custom_router_ip }}
+      IN_ROOTFS_PARTSIZE: ${{ inputs.rootfs_partsize }}
+      IN_WAN_PROTO: ${{ inputs.wan_proto }}
+      IN_WAN_IP: ${{ inputs.wan_ip }}
+      IN_WAN_GATEWAY: ${{ inputs.wan_gateway }}
+      IN_WAN_DNS: ${{ inputs.wan_dns }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -91,25 +105,43 @@ jobs:
 
       - name: Save Custom Router IP into ImmortalWrt files
         run: |
+          # 格式校验：仅接受 192.168.x.y 或 10.x.y.z（各段 0–255），非法直接失败。
+          OCT='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
+          if ! printf '%s' "$IN_ROUTER_IP" | grep -Eq "^192\.168\.${OCT}\.${OCT}$|^10\.${OCT}\.${OCT}\.${OCT}$"; then
+            echo "Error: custom_router_ip 格式不合法：$IN_ROUTER_IP（应为 192.168.x.y 或 10.x.y.z）"
+            exit 1
+          fi
           mkdir -p "${{ github.workspace }}/custom"
-          echo "${{ inputs.custom_router_ip }}" > "${{ github.workspace }}/custom/custom_router_ip.txt"
-          echo "R2S 管理地址:${{ inputs.custom_router_ip }}"
+          printf '%s\n' "$IN_ROUTER_IP" > "${{ github.workspace }}/custom/custom_router_ip.txt"
+          echo "R2S 管理地址:$IN_ROUTER_IP"
 
       - name: Validate WAN Inputs
         run: |
-          if [[ "${{ inputs.wan_proto }}" == "static" ]]; then
-            if [[ -z "${{ inputs.wan_ip }}" || -z "${{ inputs.wan_gateway }}" ]]; then
+          if [[ "$IN_WAN_PROTO" == "static" ]]; then
+            if [[ -z "$IN_WAN_IP" || -z "$IN_WAN_GATEWAY" ]]; then
               echo "Error: wan_proto=static 时 wan_ip 与 wan_gateway 均为必填项！"
               exit 1
             fi
-            echo "WAN 接入方式: static  地址: ${{ inputs.wan_ip }}  网关: ${{ inputs.wan_gateway }}  DNS: ${{ inputs.wan_dns }}"
+            # wan_ip / wan_gateway 必须为合法 IPv4；wan_dns 允许留空（留空用网关）
+            # 或空格分隔的多个 IPv4。
+            OCT='(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
+            IPV4="^${OCT}\.${OCT}\.${OCT}\.${OCT}$"
+            for _v in "$IN_WAN_IP" "$IN_WAN_GATEWAY"; do
+              printf '%s' "$_v" | grep -Eq "$IPV4" \
+                || { echo "Error: WAN 参数不是合法 IPv4：$_v"; exit 1; }
+            done
+            for _v in $IN_WAN_DNS; do
+              printf '%s' "$_v" | grep -Eq "$IPV4" \
+                || { echo "Error: wan_dns 含非 IPv4 值：$_v"; exit 1; }
+            done
+            echo "WAN 接入方式: static  地址: $IN_WAN_IP  网关: $IN_WAN_GATEWAY  DNS: $IN_WAN_DNS"
           else
             echo "WAN 接入方式: dhcp（官方默认，地址由上级设备分配，无需填写 wan_ip/wan_gateway）"
           fi
 
       - name: Building R2S ImmortalWrt 25.12.x
         run: |
-          rootfs_partsize="${{ inputs.rootfs_partsize }}"
+          rootfs_partsize="$IN_ROOTFS_PARTSIZE"
           case "$rootfs_partsize" in
             1G)
               ROOTFS_SIZE=1024
@@ -125,7 +157,7 @@ jobs:
               ;;
           esac
           echo "ROOTFS_SIZE=$ROOTFS_SIZE" >> $GITHUB_ENV
-          luci_version="${{ inputs.luci_version }}"
+          luci_version="$IN_LUCI_VERSION"
           echo "Building for profile: $PROFILE"
           # ⚠ custom/ 必须挂到 /home/build/immortalwrt/files/etc/immortalwrt-builder/，
           #   不能挂到 .../files/etc/config/：
@@ -145,16 +177,16 @@ jobs:
               -v "${{ github.workspace }}/rockchip/build.sh:/home/build/immortalwrt/build.sh" \
               -e PROFILE="$PROFILE" \
               -e ROOTFS_PARTSIZE="$ROOTFS_SIZE" \
-              -e WAN_PROTO="${{ inputs.wan_proto }}" \
-              -e WAN_IP="${{ inputs.wan_ip }}" \
-              -e WAN_GATEWAY="${{ inputs.wan_gateway }}" \
-              -e WAN_DNS="${{ inputs.wan_dns }}" \
+              -e WAN_PROTO="$IN_WAN_PROTO" \
+              -e WAN_IP="$IN_WAN_IP" \
+              -e WAN_GATEWAY="$IN_WAN_GATEWAY" \
+              -e WAN_DNS="$IN_WAN_DNS" \
           immortalwrt/imagebuilder:rockchip-armv8-openwrt-${luci_version} /bin/bash /home/build/immortalwrt/build.sh
 
       - name: Create info
         run: |
-          if [[ "${{ inputs.wan_proto }}" == "static" ]]; then
-            WAN_LINE="- 🌐 **WAN 接入**: 静态 IP ${{ inputs.wan_ip }} / 网关 ${{ inputs.wan_gateway }}"
+          if [[ "$IN_WAN_PROTO" == "static" ]]; then
+            WAN_LINE="- 🌐 **WAN 接入**: 静态 IP $IN_WAN_IP / 网关 $IN_WAN_GATEWAY"
             # 官方 config_generate 只在 dhcp / pppoe 分支生成 wan6，static 分支不生成，
             # 故静态接入时 WAN 无 IPv6（本分支刻意保持官方行为，不补 wan6）。
             WAN6_LINE="- 🧬 **WAN6**: ⚠️ 静态接入下不生成 wan6，WAN 无 IPv6（如需请刷机后在 LuCI 手动添加 wan6：DHCPv6 / eth0）"
@@ -167,8 +199,8 @@ jobs:
           ## 📡 R2S 固件信息
 
           - ✳️ **机型**: NanoPi R2S (Rockchip RK3328)
-          - 🏷️ **Image Builder 版本**: ImmortalWrt ${{ inputs.luci_version }}
-          - 🏠 **后台地址**: ${{ inputs.custom_router_ip }}
+          - 🏷️ **Image Builder 版本**: ImmortalWrt $IN_LUCI_VERSION
+          - 🏠 **后台地址**: $IN_ROUTER_IP
           ${WAN_LINE}
           ${WAN6_LINE}
           - 👤 **用户名**: root
@@ -195,7 +227,7 @@ jobs:
       - name: Archive build as workflow artifact
         uses: actions/upload-artifact@v7
         with:
-          name: r2s-immortalwrt-${{ inputs.luci_version }}-r${{ github.run_number }}
+          name: r2s-immortalwrt-${{ env.IN_LUCI_VERSION }}-r${{ github.run_number }}
           path: ${{ github.workspace }}/bin/targets/rockchip/armv8/*.img.gz
           if-no-files-found: error
           retention-days: 90

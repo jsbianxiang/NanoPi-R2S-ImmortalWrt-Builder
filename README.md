@@ -52,7 +52,7 @@ NanoPi R2S 专用：基于 GitHub Actions + ImmortalWrt 官方 Image Builder 的
 | 工作流文件 | 名称 | 包管理 | 说明 |
 | --- | --- | --- | --- |
 | `.github/workflows/build-rockchip-immortalWrt-25.12.x.yml` | Build R2S ImmortalWrt 25.12.x | apk | 构建固件，默认 `25.12.2`；产物同时发到 Release 与 Artifact（保留 90 天） |
-| `.github/workflows/clean-workflow.yml` | Cleanup Old Workflow Runs | — | 维护用：手动清理旧的 Actions 运行记录（默认只保留最近 1 天）。⚠️ **删运行记录会连带删掉那次的 Artifact**，想留档请先下载，或把 `keep_days` 调大 |
+| `.github/workflows/clean-workflow.yml` | Cleanup Old Workflow Runs | — | 维护用：手动清理旧的 Actions 运行记录（默认只保留最近 90 天）。⚠️ **删运行记录会连带删掉那次的 Artifact**，想留档请先下载，或把 `keep_days` 调大 |
 
 ### 工作流输入项
 
@@ -77,7 +77,7 @@ NanoPi R2S 专用：基于 GitHub Actions + ImmortalWrt 官方 Image Builder 的
    - **Artifacts**（Actions → 那次运行 → 页面最下方）：本次构建的固件归档，
      名为 `r2s-immortalwrt-<版本>-r<序号>`，保留 **90 天**。需要**历史版本**时用这里。
 
-> ⚠️ 维护提醒：`clean-workflow.yml` 默认只保留最近 1 天的运行记录，而
+> ⚠️ 维护提醒：`clean-workflow.yml` 默认只保留最近 90 天的运行记录，而
 > **删除运行记录会连带删除该次运行的 Artifact**。想留档请先把 `keep_days` 调大。
 
 > **提示**：`workflow_dispatch` 类型的工作流，**其文件必须存在于仓库的默认分支上**，
@@ -269,7 +269,7 @@ dllkids 源里所有**透明代理接管型**插件都只能启用**一个**。�
 | fchomo | `luci-app-fchomo` |
 
 > 后 9 项是 2026-10-12「联动审计」补入的（原表只有 18 套）。起因：dllkids
-> 源有 **406 个 `luci-app-*`**，人工维护的黑名单必然滞后。审计方法（可复现）：
+> 源有 **409 个 `luci-app-*`**，人工维护的黑名单必然滞后。审计方法（可复现）：
 > 从源目录列表按 ① 包名关键词（clash / ss / xray / v2ray / proxy / dae …）
 > ② apk 体积（自带内核的前端必然 ≥ 数 MiB —— nekobox 10 MiB、honk 9.6 MiB、
 > openclash 7.8 MiB；而纯配置页只有几 KiB —— redsocks 2.5 KiB、ss-redir

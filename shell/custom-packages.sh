@@ -45,9 +45,12 @@
 #   3. 本分支不集成 store / istore，故不提供依赖 istore 的插件选项。
 #   4. 硬路由 / 小闪存设备请酌情启用；包过多会导致固件过大或构建失败。
 #   5. 「三」的短名已对 ImmortalWrt 25.12 官方源（aarch64_generic，共 11428 个包）
-#      逐一校验。25.12 已移除的 cshark / dynapoint / haproxy-tcp / mjpg-streamer /
-#      nft-qos / splash，以及官方源本就没有的 nikki / radicale，均已剔除，
-#      避免「取消注释即构建失败」。
+#      逐一校验。25.12 官方源**没有 luci-app- 前端**的 cshark / dynapoint /
+#      haproxy-tcp / mjpg-streamer / nft-qos / splash，以及官方源本就没有的
+#      nikki / radicale，均已剔除，避免「取消注释即构建失败」。
+#      ⚠ 注意：其中 haproxy-tcp / nft-qos / nikki 在 **dllkids 第三方源**里是有
+#        `luci-app-` 前端的，只是**官方源没有** —— 本清单按官方源校验，故不列入；
+#        要启用它们请走「一、第三方插件」（受代理互斥约束）。
 #   6. 【已内置中文的 app 包】argon-config / cpufreq / diskman 这三个 app 包在
 #      ImmortalWrt 官方源里（版本 27.150.x）**自带简体中文**，启用它们时**不能**再配
 #      独立的 luci-i18n-<短名>-zh-cn（26.236.x），否则 apk 会因文件冲突报
@@ -62,7 +65,7 @@
 # nikki 外，还提供 luci-app-ssr-plus / passwall2 / clashoo / openclash / mihomo 等，
 # 需要时取消 1.2 的注释即可，无需另外加源。
 #
-# ⚠ 该源的第三方 LuCI 应用**没有**独立中文语言包（源内 613 个包里只有
+# ⚠ 该源的第三方 LuCI 应用**没有**独立中文语言包（源内 616 个包里只有
 #   clashoo 与 eqos 两个 i18n 包），所以不要给它们加 luci-i18n-xxx-zh-cn，
 #   否则 make image 会因找不到包而失败。
 # =============================================================================

@@ -39,7 +39,7 @@
 > 「代理插件互斥」）。`rockchip/build.sh` 在检测到 `luci-app-ssr-plus` 时会
 > 顺带加入该源的 `mihomo` 包作为内核（不再手动下载固定版本二进制）。
 >
-> ⚠️ 该源的第三方 LuCI 应用**没有**独立中文语言包（源内 613 个包中只有 `clashoo`
+> ⚠️ 该源的第三方 LuCI 应用**没有**独立中文语言包（源内 616 个包中只有 `clashoo`
 > 与 `eqos` 两个 i18n 包），启用它们时**不要**加 `luci-i18n-xxx-zh-cn`，
 > 否则 `make image` 会因找不到包而失败。
 

@@ -39,3 +39,4 @@ LICENSE    text eol=lf
 *.img   binary
 *.apk   binary
 *.ipk   binary
+*.pem   binary

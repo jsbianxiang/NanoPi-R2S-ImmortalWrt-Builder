@@ -8,6 +8,10 @@
 # 设备端 apk 源列表与 dllkids 公钥（build.sh 生成）
 /files/etc/apk/
 
+# OpenClash 构建期下载的内核与 GeoIP/GeoSite（build.sh 生成，
+# 含 ~10 MB 的 clash_meta 二进制）
+/files/etc/openclash/
+
 # 工作流运行期创建的注入目录（存放 custom_router_ip.txt）
 /custom/
 
