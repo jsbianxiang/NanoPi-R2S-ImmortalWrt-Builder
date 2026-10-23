@@ -38,8 +38,9 @@
 > **正式版 tag** 编译（源地址 `codeload.github.com/metacubex/mihomo/tar.gz/v<版本>`，
 > 提交历史 1.19.21→1.19.32 全部为正式版）；Alpha 频道在上游是独立的
 > `Prerelease-Alpha` tag，只有 nikki 官方 feed 的 `mihomo-alpha` 包跟它，
-> 本构建不引入该包。源内当前 `mihomo-1.19.31-r1`，上游最新正式版为 `v1.19.33`
-> （2026-10-21）—— 要严格跟进最新正式版，取消 `rockchip/build.sh` 里
+> 本构建不引入该包。源内当前 `mihomo-1.19.31-r1`（2026-10-23 实测），
+> 上游最新正式版为 `v1.19.33`（2026-10-21）—— 要严格跟进最新正式版，
+> 取消 `rockchip/build.sh` 里
 > `MIHOMO_CORE_VER` / `MIHOMO_CORE_SHA256` 两行注释即可（构建期下载正式版
 > 资产、sha256 + ELF(aarch64) 双重校验后覆盖 `/usr/libexec/mihomo-core`，
 > 不影响 apk 依赖解析；设备端 `apk upgrade mihomo` 会恢复成源内版本）。

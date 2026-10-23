@@ -381,7 +381,8 @@ fi
 # ---------- SSR-Plus：内核改用源内 mihomo apk，不手动下二进制 ----------
 if echo "$PACKAGES" | grep -q "luci-app-ssr-plus"; then
     echo "✅ 已选择 luci-app-ssr-plus，内核使用源内 mihomo 包"
-    # mihomo 由注入的第三方源以 apk 形式提供（当前 1.19.31），
+    # mihomo 由注入的第三方源以 apk 形式提供（2026-10-23 实测 1.19.31，
+    # 正式版；kenzok8/small 从 mihomo 正式版 tag 编译），
     # 随源更新、可被 apk 正常升级/卸载，比手动 wget 二进制可靠。
     # 原实现固定 v1.19.24 二进制且直接写 /usr/bin，已过时且绕过包管理，故移除。
     if ! echo " $PACKAGES " | grep -q " mihomo "; then
