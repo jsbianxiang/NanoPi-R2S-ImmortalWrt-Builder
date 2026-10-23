@@ -39,11 +39,13 @@
 > 「代理插件互斥」）。`rockchip/build.sh` 在检测到 `luci-app-ssr-plus` 时会
 > 顺带加入该源的 `mihomo` 包作为内核（不再手动下载固定版本二进制）。
 >
-> ⚠️ 该源的第三方 LuCI 应用**没有**独立中文语言包（源内 617 个包中只有 `clashoo`
+> ⚠️ 该源的第三方 LuCI 应用**没有**独立中文语言包（源内 622 个包中只有 `clashoo`
 > 与 `eqos` 两个 i18n 包），启用它们时**不要**加 `luci-i18n-xxx-zh-cn`，
 > 否则 `make image` 会因找不到包而失败。
 > （2026-10-14 复核：源侧从 616 增至 **617** —— 新增 `ifb-shaper-0.1.1-r1`，
 > 另 9 个包版本号上浮。`audit.py --online` 会逐项实测比对，文档不用手工同步。）
+> （2026-10-23 复核：源侧从 617 增至 **622** —— 新增 5 个包，其中
+> `luci-app-*` 409 → 411。）
 
 > ⚠️ 代理插件互斥：nikki / clashoo / openclash / passwall(2) / ssr-plus / daed …
 > 只能启用一个，**先停旧的再开新的**。`rockchip/build.sh` 有构建期硬校验

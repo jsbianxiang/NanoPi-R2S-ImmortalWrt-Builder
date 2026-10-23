@@ -273,7 +273,7 @@ dllkids 源里所有**透明代理接管型**插件都只能启用**一个**。�
 | fchomo | `luci-app-fchomo` |
 
 > 后 9 项是 2026-10-12「联动审计」补入的（原表只有 18 套）。起因：dllkids
-> 源有 **409 个 `luci-app-*`**，人工维护的黑名单必然滞后。审计方法（可复现）：
+> 源有 **411 个 `luci-app-*`**，人工维护的黑名单必然滞后。审计方法（可复现）：
 > 从源目录列表按 ① 包名关键词（clash / ss / xray / v2ray / proxy / dae …）
 > ② apk 体积（自带内核的前端必然 ≥ 数 MiB —— nekobox 10 MiB、honk 9.6 MiB、
 > openclash 7.8 MiB；而纯配置页只有几 KiB —— redsocks 2.5 KiB、ss-redir
