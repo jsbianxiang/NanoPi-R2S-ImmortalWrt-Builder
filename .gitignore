@@ -12,6 +12,10 @@
 # 含 ~10 MB 的 clash_meta 二进制）
 /files/etc/openclash/
 
+# mihomo 内核钉版时下载的正式版二进制（build.sh 生成，~20 MB，
+# 仅当取消 rockchip/build.sh 里 MIHOMO_CORE_VER 注释时出现）
+/files/usr/libexec/
+
 # 工作流运行期创建的注入目录（存放 custom_router_ip.txt）
 /custom/
 

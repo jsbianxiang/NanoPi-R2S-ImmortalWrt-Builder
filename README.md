@@ -335,6 +335,32 @@ ALLOW_PROXY_CONFLICT=1 bash rockchip/build.sh
 > 新增代理栈时，记得同步更新 `rockchip/build.sh` 里的 `_PROXY_STACKS` 表、
 > 本表、以及 `shell/custom-packages.sh` 文件头「注意事项 2」的清单 —— 三处同步。
 
+### nikki 的内核版本：默认就是正式版（不是 Alpha）
+
+nikki **自身没有内核频道开关** —— `nikki.init` 直接执行 `/usr/bin/mihomo`，
+`nikki.conf` 与 LuCI 各视图均无版本设置；内核完全由 `mihomo` 包提供
+（实体 `/usr/libexec/mihomo-core`，`/usr/bin/mihomo` 是 alternatives 链接）。
+
+本构建的内核 = dllkids 源的 `mihomo` apk，由 kenzok8/small 从 mihomo
+**正式版 tag** 编译（源地址 `codeload.github.com/metacubex/mihomo/tar.gz/v<版本>`；
+提交历史 1.19.21 → 1.19.32 全部为正式版）。mihomo 的 Alpha 频道在上游是独立的
+`Prerelease-Alpha` tag，只有 nikki 官方 feed 的 `mihomo-alpha` 包跟它 ——
+本构建不引入该包，**天然与 Alpha 无关**。（nikki 上游仓库只提供
+`mihomo-alpha` / `mihomo-meta` 两个内核包，照那个 feed 装才会装到 Alpha。）
+
+唯一差距是**滞后**而非频道：源内当前 `mihomo-1.19.31-r1`（2026-09-14），
+上游最新正式版为 `v1.19.33`（2026-10-21）。两种选择：
+
+- **默认（零维护）**：什么都不用做，dllkids 源重建后重新构建固件即自动跟上
+  （符合「内核用源内 apk 包、不手动下载固定版本二进制」的既有设计）；
+- **严格钉版最新正式版**：取消 `rockchip/build.sh` 里 `MIHOMO_CORE_VER` /
+  `MIHOMO_CORE_SHA256` 两行注释（已预填 `v1.19.33` 及其 sha256）。构建期会
+  下载 GitHub 正式版资产、校验 sha256 与 ELF 头（aarch64）后覆盖
+  `/usr/libexec/mihomo-core`；`/usr/bin/mihomo` 链接与 nikki 的
+  `DEPENDS:+mihomo` 均不受影响（依赖仍由源内 apk 满足，只是二进制被换掉）。
+  换版本时两行都要改（sha256 取 Release 页面资产旁标注的哈希）。
+  ⚠ 设备端执行 `apk upgrade mihomo` 会把文件恢复成源内版本，需重刷固件。
+
 ### 预置软件包清单
 
 默认包列表定义在 `rockchip/build.sh` 的 `PACKAGES` 变量中；

@@ -391,6 +391,75 @@ else
     echo "⚪️ 未选择 luci-app-ssr-plus"
 fi
 
+# ---------- nikki / SSR-Plus / Clashoo 内核：可选钉版到最新正式版（默认关闭） ----------
+# 背景（2026-10-23 上游核实）：
+#   · nikki 自身没有内核频道开关 —— nikki.init 直接执行 /usr/bin/mihomo，
+#     nikki.conf 与 LuCI 视图（app/editor/log/mixin/profile/proxy）均无版本
+#     设置；内核完全由 mihomo 包提供（实体 /usr/libexec/mihomo-core，
+#     /usr/bin/mihomo 是 alternatives 链接）。
+#   · 本构建的内核 = dllkids 源 mihomo apk，由 kenzok8/small 从 mihomo
+#     **正式版 tag** 编译（Makefile 源地址 codeload.github.com/metacubex/
+#     mihomo/tar.gz/v<版本>；提交历史 1.19.21→1.19.32 全是正式版），
+#     **不是 Alpha**。Alpha 频道在上游是独立的 Prerelease-Alpha tag，
+#     只有 nikki 官方 feed 的 mihomo-alpha 包跟它；本构建不引入该包，
+#     天然与 Alpha 无关。
+#   · 唯一差距是"滞后"：源内 1.19.31（2026-09-14）vs 上游最新正式版
+#     v1.19.33（2026-10-21，kenzok8/small master 已跟到 1.19.32，
+#     dllkids 二进制源尚未重建）。要严格用最新正式版时，取消下面两行
+#     注释（版本与 sha256 必须成对填写，缺一即报错退出）：
+#       sha256 取法：GitHub Release 页面 mihomo-linux-arm64-<版本>.gz
+#       资产旁标注的哈希（expanded_assets 视图可见）。
+#   生效方式：覆盖 files/usr/libexec/mihomo-core（FILES= 在 apk 安装
+#     之后叠加，alternatives 链接与 nikki 的 DEPENDS:+mihomo 均不受
+#     影响 —— 依赖仍由源内 mihomo apk 满足，只是二进制被换掉）。
+#   ⚠ 设备端若 apk upgrade mihomo（固件自带 dllkids 源）会把文件恢复
+#     成源内版本，需重刷固件或再替换一次。
+#MIHOMO_CORE_VER="v1.19.33"
+#MIHOMO_CORE_SHA256="ba408b317080ee265c46cb923a50018c1b82cbd708551cdd46a1e3e307396187"
+
+if [ -n "${MIHOMO_CORE_VER:-}" ]; then
+    if [ -z "${MIHOMO_CORE_SHA256:-}" ]; then
+        echo "ERROR: MIHOMO_CORE_VER=${MIHOMO_CORE_VER} 已设置但 MIHOMO_CORE_SHA256 为空，拒绝下载未校验内核" >&2
+        exit 1
+    fi
+    if echo " $PACKAGES " | grep -qE " (nikki|luci-app-nikki|luci-app-ssr-plus|clashoo|luci-app-clashoo) "; then
+        MIHOMO_CORE_URL="https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_CORE_VER}/mihomo-linux-arm64-${MIHOMO_CORE_VER}.gz"
+        MIHOMO_CORE_GZ="$BUILDER_DIR/files/usr/libexec/.mihomo-core.gz"
+        MIHOMO_CORE_BIN="$BUILDER_DIR/files/usr/libexec/.mihomo-core"
+        mkdir -p "$BUILDER_DIR/files/usr/libexec"
+        echo "==> 下载 mihomo ${MIHOMO_CORE_VER}（linux-arm64 正式版资产）..."
+        if ! curl -fL --retry 3 --connect-timeout 30 -o "$MIHOMO_CORE_GZ" "$MIHOMO_CORE_URL"; then
+            echo "ERROR: mihomo 内核下载失败：$MIHOMO_CORE_URL" >&2
+            rm -f "$MIHOMO_CORE_GZ"; exit 1
+        fi
+        if ! echo "${MIHOMO_CORE_SHA256}  ${MIHOMO_CORE_GZ}" | sha256sum -c -; then
+            echo "ERROR: mihomo 内核 sha256 校验失败（版本与资产不匹配？）" >&2
+            rm -f "$MIHOMO_CORE_GZ"; exit 1
+        fi
+        if ! gunzip -c "$MIHOMO_CORE_GZ" > "$MIHOMO_CORE_BIN"; then
+            echo "ERROR: mihomo 内核解压失败" >&2
+            rm -f "$MIHOMO_CORE_GZ" "$MIHOMO_CORE_BIN"; exit 1
+        fi
+        rm -f "$MIHOMO_CORE_GZ"
+        # 三重校验（与 OpenClash meta 内核同口径）：体积 / ELF magic / e_machine=EM_AARCH64
+        MIHOMO_CORE_SIZE=$(wc -c < "$MIHOMO_CORE_BIN" 2>/dev/null)
+        if [ "${MIHOMO_CORE_SIZE:-0}" -lt 4194304 ]; then
+            echo "ERROR: mihomo 内核体积异常（${MIHOMO_CORE_SIZE} 字节 < 4 MiB）" >&2
+            rm -f "$MIHOMO_CORE_BIN"; exit 1
+        fi
+        if [ "$(od -An -tx1 -N4 "$MIHOMO_CORE_BIN" | tr -d ' \n')" != "7f454c46" ] \
+           || [ "$(od -An -tx1 -j18 -N2 "$MIHOMO_CORE_BIN" | tr -d ' \n')" != "b700" ]; then
+            echo "ERROR: mihomo 内核文件头不是 aarch64 ELF" >&2
+            rm -f "$MIHOMO_CORE_BIN"; exit 1
+        fi
+        mv -f "$MIHOMO_CORE_BIN" "$BUILDER_DIR/files/usr/libexec/mihomo-core"
+        chmod 0755 "$BUILDER_DIR/files/usr/libexec/mihomo-core"
+        echo "✅ mihomo 内核已钉版 ${MIHOMO_CORE_VER}（覆盖源内 apk 同名文件，$(du -h "$BUILDER_DIR/files/usr/libexec/mihomo-core" | cut -f1)）"
+    else
+        echo "⚠️ MIHOMO_CORE_VER 已设置，但未启用使用 mihomo 内核的代理栈（nikki / ssr-plus / clashoo），跳过钉版"
+    fi
+fi
+
 # =========================================================
 # 注入 dllkids（kenzok8）第三方 APK 源
 # =========================================================
