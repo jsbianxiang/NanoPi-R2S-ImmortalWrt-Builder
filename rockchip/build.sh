@@ -382,7 +382,9 @@ fi
 if echo "$PACKAGES" | grep -q "luci-app-ssr-plus"; then
     echo "✅ 已选择 luci-app-ssr-plus，内核使用源内 mihomo 包"
     # mihomo 由注入的第三方源以 apk 形式提供（2026-10-23 实测 1.19.31，
-    # 正式版；kenzok8/small 从 mihomo 正式版 tag 编译），
+    # 正式版；kenzok8/small 从 mihomo 正式版 tag 编译）—— 用于满足依赖；
+    # 实体二进制默认还会被下方「跟随最新正式版」逻辑覆盖为上游最新版
+    # （MIHOMO_CORE_TRACK=0 时除外，那时就用源内这一份）。
     # 随源更新、可被 apk 正常升级/卸载，比手动 wget 二进制可靠。
     # 原实现固定 v1.19.24 二进制且直接写 /usr/bin，已过时且绕过包管理，故移除。
     if ! echo " $PACKAGES " | grep -q " mihomo "; then
@@ -392,50 +394,120 @@ else
     echo "⚪️ 未选择 luci-app-ssr-plus"
 fi
 
-# ---------- nikki / SSR-Plus / Clashoo 内核：可选钉版到最新正式版（默认关闭） ----------
+# ---------- nikki / SSR-Plus 内核：默认跟随上游最新正式版 ----------
 # 背景（2026-10-23 上游核实）：
 #   · nikki 自身没有内核频道开关 —— nikki.init 直接执行 /usr/bin/mihomo，
-#     nikki.conf 与 LuCI 视图（app/editor/log/mixin/profile/proxy）均无版本
-#     设置；内核完全由 mihomo 包提供（实体 /usr/libexec/mihomo-core，
-#     /usr/bin/mihomo 是 alternatives 链接）。
-#   · 本构建的内核 = dllkids 源 mihomo apk，由 kenzok8/small 从 mihomo
-#     **正式版 tag** 编译（Makefile 源地址 codeload.github.com/metacubex/
-#     mihomo/tar.gz/v<版本>；提交历史 1.19.21→1.19.32 全是正式版），
-#     **不是 Alpha**。Alpha 频道在上游是独立的 Prerelease-Alpha tag，
-#     只有 nikki 官方 feed 的 mihomo-alpha 包跟它；本构建不引入该包，
-#     天然与 Alpha 无关。
-#   · 唯一差距是"滞后"：源内 1.19.31（2026-09-14）vs 上游最新正式版
-#     v1.19.33（2026-10-21，kenzok8/small master 已跟到 1.19.32，
-#     dllkids 二进制源尚未重建）。要严格用最新正式版时，取消下面两行
-#     注释（版本与 sha256 必须成对填写，缺一即报错退出）：
-#       sha256 取法：GitHub Release 页面 mihomo-linux-arm64-<版本>.gz
-#       资产旁标注的哈希（expanded_assets 视图可见）。
-#   生效方式：覆盖 files/usr/libexec/mihomo-core（FILES= 在 apk 安装
-#     之后叠加，alternatives 链接与 nikki 的 DEPENDS:+mihomo 均不受
-#     影响 —— 依赖仍由源内 mihomo apk 满足，只是二进制被换掉）。
-#   ⚠ 设备端若 apk upgrade mihomo（固件自带 dllkids 源）会把文件恢复
-#     成源内版本，需重刷固件或再替换一次。
-#MIHOMO_CORE_VER="v1.19.33"
+#     nikki.conf 与 LuCI 视图均无版本设置；内核完全由 mihomo 包提供
+#     （实体 /usr/libexec/mihomo-core，/usr/bin/mihomo 是 alternatives 链接）。
+#   · mihomo 上游两个发布频道：正式版 tag v<版本>（如 v1.19.33）与
+#     Prerelease-Alpha（alpha 分支快照，VERSION=alpha-<commit>）。nikki 官方
+#     feed 的 mihomo-alpha 包跟 Alpha；kenzok8/small 的 mihomo 包（即 dllkids
+#     源内那个）跟正式版 tag，但二进制重建滞后上游数周。
+#
+# 内核来源三态（优先级从高到低）：
+#   1) MIHOMO_CORE_VER + MIHOMO_CORE_SHA256 成对设置 → 钉版到指定正式版
+#      （sha256 取 Release 页面资产旁标注值；缺 sha 拒绝下载）；
+#   2) MIHOMO_CORE_TRACK=0 → 完全用 dllkids 源内 mihomo apk 的二进制
+#      （正式版，滞后数周，随源重建自动更新）；
+#   3) 默认（MIHOMO_CORE_TRACK=1）→ 构建期经 GitHub API 解析 mihomo 最新
+#      正式版（releases/latest 只返回非 draft / 非 prerelease），下载对应
+#      linux-arm64 资产，校验通过后覆盖 /usr/libexec/mihomo-core。上游发新
+#      正式版后下次构建自动跟上，无需改仓库。
+#
+# 覆盖机制：files/ 由 make image 的 FILES= 在 apk 安装之后叠加
+# （include/rootfs.mk prepare_rootfs：先 file_copy(FILES→rootfs) 再跑各包
+#  postinst；mihomo 包无 postinst，不冲突）。/usr/bin/mihomo 的 alternatives
+# 链接与 nikki 的 DEPENDS:+mihomo 均不受影响 —— 依赖仍由源内 mihomo apk
+# 满足，只是实体二进制被换掉。
+# ⚠ 设备端若 apk upgrade mihomo（固件自带 dllkids 源）会把文件恢复成源内
+#   版本，需重刷固件或再替换一次。
+#
+# 下载/校验失败一律 exit 1，不静默回落源内版本（避免"以为跟上了其实没有"）；
+# 确需回落设 MIHOMO_CORE_TRACK=0。
+MIHOMO_CORE_TRACK="${MIHOMO_CORE_TRACK:-1}"
+#MIHOMO_CORE_VER="v1.19.33"        # 可选：钉版（与下一行成对使用）
 #MIHOMO_CORE_SHA256="ba408b317080ee265c46cb923a50018c1b82cbd708551cdd46a1e3e307396187"
 
-if [ -n "${MIHOMO_CORE_VER:-}" ]; then
-    if [ -z "${MIHOMO_CORE_SHA256:-}" ]; then
-        echo "ERROR: MIHOMO_CORE_VER=${MIHOMO_CORE_VER} 已设置但 MIHOMO_CORE_SHA256 为空，拒绝下载未校验内核" >&2
-        exit 1
+MIHOMO_CORE_DIR="$BUILDER_DIR/files/usr/libexec"
+MIHOMO_CORE_GZ="$MIHOMO_CORE_DIR/.mihomo-core.gz"
+MIHOMO_CORE_BIN="$MIHOMO_CORE_DIR/.mihomo-core"
+
+if echo " $PACKAGES " | grep -qE " (nikki|luci-app-nikki|luci-app-ssr-plus) "; then
+    mkdir -p "$MIHOMO_CORE_DIR"
+    MIHOMO_CORE_TAG=""
+
+    if [ -n "${MIHOMO_CORE_VER:-}" ]; then
+        # ---- 模式 1：钉版 ----
+        if [ -z "${MIHOMO_CORE_SHA256:-}" ]; then
+            echo "ERROR: MIHOMO_CORE_VER=${MIHOMO_CORE_VER} 已设置但 MIHOMO_CORE_SHA256 为空，拒绝下载未校验内核" >&2
+            exit 1
+        fi
+        MIHOMO_CORE_TAG="$MIHOMO_CORE_VER"
+        MIHOMO_CORE_URL="https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_CORE_TAG}/mihomo-linux-arm64-${MIHOMO_CORE_TAG}.gz"
+        echo "==> 下载 mihomo ${MIHOMO_CORE_TAG}（钉版模式，linux-arm64 正式版资产）..."
+
+    elif [ "$MIHOMO_CORE_TRACK" = "0" ]; then
+        # ---- 模式 2：源内版本 ----
+        echo "⚪️ MIHOMO_CORE_TRACK=0：内核用 dllkids 源内 mihomo apk 的二进制（不覆盖）"
+
+    else
+        # ---- 模式 3：跟随最新正式版 ----
+        echo "==> 解析 mihomo 最新正式版（GitHub releases/latest）..."
+        MIHOMO_API_URL="https://api.github.com/repos/MetaCubeX/mihomo/releases/latest"
+        if command -v curl >/dev/null 2>&1; then
+            MIHOMO_JSON=$(curl -fsSL --retry 3 --connect-timeout 30 "$MIHOMO_API_URL") || {
+                echo "ERROR: 无法获取 mihomo 最新正式版信息（$MIHOMO_API_URL）；确需继续构建可设 MIHOMO_CORE_TRACK=0 回落源内版本" >&2
+                exit 1
+            }
+        elif command -v wget >/dev/null 2>&1; then
+            MIHOMO_JSON=$(wget -qO- --tries=3 --timeout=30 "$MIHOMO_API_URL") || {
+                echo "ERROR: 无法获取 mihomo 最新正式版信息（$MIHOMO_API_URL）；确需继续构建可设 MIHOMO_CORE_TRACK=0 回落源内版本" >&2
+                exit 1
+            }
+        else
+            echo "ERROR: 缺少 curl/wget，无法查询 mihomo 最新正式版" >&2
+            exit 1
+        fi
+        # 解析（GitHub API 返回美化 JSON，一个字段一行，逐行匹配即可）
+        MIHOMO_CORE_TAG=$(printf '%s\n' "$MIHOMO_JSON" | grep -m1 '"tag_name"' | sed -e 's/.*"tag_name"[[:space:]]*:[[:space:]]*"//' -e 's/".*//')
+        MIHOMO_PRE=$(printf '%s\n' "$MIHOMO_JSON" | grep -m1 '"prerelease"' | sed -e 's/.*"prerelease"[[:space:]]*:[[:space:]]*//' -e 's/[},].*//' | tr -d '[:space:]')
+        MIHOMO_DRAFT=$(printf '%s\n' "$MIHOMO_JSON" | grep -m1 '"draft"' | sed -e 's/.*"draft"[[:space:]]*:[[:space:]]*//' -e 's/[},].*//' | tr -d '[:space:]')
+        MIHOMO_CORE_URL=$(printf '%s\n' "$MIHOMO_JSON" | grep -m1 "browser_download_url.*mihomo-linux-arm64-${MIHOMO_CORE_TAG}\.gz\"" | sed -e 's/.*"browser_download_url"[[:space:]]*:[[:space:]]*"//' -e 's/"*,*[[:space:]]*$//')
+        # 解析结果校验
+        if [ -z "$MIHOMO_CORE_TAG" ]; then
+            echo "ERROR: releases/latest 响应中未找到 tag_name（API 形状可能已变）" >&2
+            exit 1
+        fi
+        if [ "$MIHOMO_PRE" != "false" ] || [ "$MIHOMO_DRAFT" != "false" ]; then
+            echo "ERROR: releases/latest 返回 prerelease=${MIHOMO_PRE:-?} draft=${MIHOMO_DRAFT:-?}（${MIHOMO_CORE_TAG}），拒绝使用" >&2
+            exit 1
+        fi
+        if [ -z "$MIHOMO_CORE_URL" ]; then
+            echo "ERROR: ${MIHOMO_CORE_TAG} 未发布 mihomo-linux-arm64-*.gz 资产" >&2
+            exit 1
+        fi
+        # 资产 URL 必须与 tag 严格对应（同 release 有 android/darwin/freebsd/windows
+        # 的 arm64 资产共 11 个，只有精确同名才放行）
+        case "$MIHOMO_CORE_URL" in
+            https://github.com/MetaCubeX/mihomo/releases/download/"$MIHOMO_CORE_TAG"/mihomo-linux-arm64-"$MIHOMO_CORE_TAG".gz) ;;
+            *)  echo "ERROR: 资产 URL 与 tag 不匹配：$MIHOMO_CORE_URL" >&2
+                exit 1 ;;
+        esac
+        echo "==> 下载 mihomo ${MIHOMO_CORE_TAG}（上游最新正式版，linux-arm64）..."
     fi
-    if echo " $PACKAGES " | grep -qE " (nikki|luci-app-nikki|luci-app-ssr-plus|clashoo|luci-app-clashoo) "; then
-        MIHOMO_CORE_URL="https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_CORE_VER}/mihomo-linux-arm64-${MIHOMO_CORE_VER}.gz"
-        MIHOMO_CORE_GZ="$BUILDER_DIR/files/usr/libexec/.mihomo-core.gz"
-        MIHOMO_CORE_BIN="$BUILDER_DIR/files/usr/libexec/.mihomo-core"
-        mkdir -p "$BUILDER_DIR/files/usr/libexec"
-        echo "==> 下载 mihomo ${MIHOMO_CORE_VER}（linux-arm64 正式版资产）..."
+
+    if [ -n "$MIHOMO_CORE_TAG" ]; then
+        # ---- 下载 + 校验 + 覆盖（模式 1/3 共用）----
         if ! curl -fL --retry 3 --connect-timeout 30 -o "$MIHOMO_CORE_GZ" "$MIHOMO_CORE_URL"; then
             echo "ERROR: mihomo 内核下载失败：$MIHOMO_CORE_URL" >&2
             rm -f "$MIHOMO_CORE_GZ"; exit 1
         fi
-        if ! echo "${MIHOMO_CORE_SHA256}  ${MIHOMO_CORE_GZ}" | sha256sum -c -; then
-            echo "ERROR: mihomo 内核 sha256 校验失败（版本与资产不匹配？）" >&2
-            rm -f "$MIHOMO_CORE_GZ"; exit 1
+        # sha256 校验（仅钉版模式：跟随模式无固定哈希，靠下面几项兜底）
+        if [ -n "${MIHOMO_CORE_VER:-}" ] && [ -n "${MIHOMO_CORE_SHA256:-}" ]; then
+            if ! echo "${MIHOMO_CORE_SHA256}  ${MIHOMO_CORE_GZ}" | sha256sum -c -; then
+                echo "ERROR: mihomo 内核 sha256 校验失败（版本与资产不匹配？）" >&2
+                rm -f "$MIHOMO_CORE_GZ"; exit 1
+            fi
         fi
         if ! gunzip -c "$MIHOMO_CORE_GZ" > "$MIHOMO_CORE_BIN"; then
             echo "ERROR: mihomo 内核解压失败" >&2
@@ -453,12 +525,20 @@ if [ -n "${MIHOMO_CORE_VER:-}" ]; then
             echo "ERROR: mihomo 内核文件头不是 aarch64 ELF" >&2
             rm -f "$MIHOMO_CORE_BIN"; exit 1
         fi
-        mv -f "$MIHOMO_CORE_BIN" "$BUILDER_DIR/files/usr/libexec/mihomo-core"
-        chmod 0755 "$BUILDER_DIR/files/usr/libexec/mihomo-core"
-        echo "✅ mihomo 内核已钉版 ${MIHOMO_CORE_VER}（覆盖源内 apk 同名文件，$(du -h "$BUILDER_DIR/files/usr/libexec/mihomo-core" | cut -f1)）"
-    else
-        echo "⚠️ MIHOMO_CORE_VER 已设置，但未启用使用 mihomo 内核的代理栈（nikki / ssr-plus / clashoo），跳过钉版"
+        # 版本串校验：官方 release 二进制由 Alpha 分支 build.yml 的
+        # -ldflags "-X ...constant.Version=<tag>" 注入，二进制内必含该串
+        # （跟随模式下这是"确实下到了这个版本"的关键锚点）
+        if ! grep -a -q -F "$MIHOMO_CORE_TAG" "$MIHOMO_CORE_BIN" \
+           && ! grep -a -q -F "${MIHOMO_CORE_TAG#v}" "$MIHOMO_CORE_BIN"; then
+            echo "ERROR: mihomo 二进制内未找到版本串 ${MIHOMO_CORE_TAG}（下错资产，或上游改了版本注入方式）" >&2
+            rm -f "$MIHOMO_CORE_BIN"; exit 1
+        fi
+        mv -f "$MIHOMO_CORE_BIN" "$MIHOMO_CORE_DIR/mihomo-core"
+        chmod 0755 "$MIHOMO_CORE_DIR/mihomo-core"
+        echo "✅ mihomo 内核：${MIHOMO_CORE_TAG}（覆盖源内 apk 同名文件，$(du -h "$MIHOMO_CORE_DIR/mihomo-core" | cut -f1)，sha256 $(sha256sum "$MIHOMO_CORE_DIR/mihomo-core" | cut -c1-12)…）"
     fi
+else
+    echo "⚪️ 未启用 nikki / ssr-plus，跳过 mihomo 内核处理"
 fi
 
 # =========================================================

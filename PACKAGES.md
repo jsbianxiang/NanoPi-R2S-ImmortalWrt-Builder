@@ -31,19 +31,21 @@
 | `mihomo` | nikki 的内核（依赖解析自动带入，**正式版**，见下方说明） | [kenzok8](https://github.com/kenzok8) |
 | `kmod-tun` / `kmod-inet-diag` / `kmod-nft-tproxy` / `kmod-nft-socket` | nikki 依赖的内核模块 | ImmortalWrt 官方 kmods 源 |
 
-> ℹ️ **nikki 的内核来自 `mihomo` 包，且默认就是正式版、不是 Alpha**（2026-10-23 上游核实）：
-> nikki 自身没有内核频道开关（`nikki.init` 直接执行 `/usr/bin/mihomo`，配置与 LuCI
-> 均无版本设置），内核完全由 `mihomo` 包提供（实体 `/usr/libexec/mihomo-core`，
-> `/usr/bin/mihomo` 为 alternatives 链接）。该包由 kenzok8/small 从 mihomo
-> **正式版 tag** 编译（源地址 `codeload.github.com/metacubex/mihomo/tar.gz/v<版本>`，
-> 提交历史 1.19.21→1.19.32 全部为正式版）；Alpha 频道在上游是独立的
-> `Prerelease-Alpha` tag，只有 nikki 官方 feed 的 `mihomo-alpha` 包跟它，
-> 本构建不引入该包。源内当前 `mihomo-1.19.31-r1`（2026-10-23 实测），
-> 上游最新正式版为 `v1.19.33`（2026-10-21）—— 要严格跟进最新正式版，
-> 取消 `rockchip/build.sh` 里
-> `MIHOMO_CORE_VER` / `MIHOMO_CORE_SHA256` 两行注释即可（构建期下载正式版
-> 资产、sha256 + ELF(aarch64) 双重校验后覆盖 `/usr/libexec/mihomo-core`，
-> 不影响 apk 依赖解析；设备端 `apk upgrade mihomo` 会恢复成源内版本）。
+> ℹ️ **nikki 的内核来自 `mihomo` 包，默认跟随上游最新正式版、不是 Alpha**
+> （2026-10-23 上游核实）：nikki 自身没有内核频道开关（`nikki.init` 直接执行
+> `/usr/bin/mihomo`，配置与 LuCI 均无版本设置），内核完全由 `mihomo` 包提供
+> （实体 `/usr/libexec/mihomo-core`，`/usr/bin/mihomo` 为 alternatives 链接）。
+> Alpha 频道在上游是独立的 `Prerelease-Alpha` tag，只有 nikki 官方 feed 的
+> `mihomo-alpha` 包跟它，本构建不引入该包。
+> **默认行为**：构建期经 GitHub API 解析 mihomo 最新正式版
+> （`releases/latest`，非 draft / 非 prerelease），下载
+> `mihomo-linux-arm64-<tag>.gz`，校验（URL 与 tag 精确同名 / 体积 / ELF
+> aarch64 / 二进制内嵌版本串）后覆盖 `/usr/libexec/mihomo-core`，上游发新
+> 正式版后下次构建自动跟上。详见 README「nikki 的内核版本」。
+> 另两态：`MIHOMO_CORE_VER`+`MIHOMO_CORE_SHA256` 钉版指定版本；
+> `MIHOMO_CORE_TRACK=0` 用源内 apk 的二进制（正式版但滞后数周——
+> 源内当前 `mihomo-1.19.31-r1`，2026-10-23 实测）。
+> 覆盖不影响 apk 依赖解析；设备端 `apk upgrade mihomo` 会恢复成源内版本。
 
 - APK 源：`https://down.dllkids.xyz/openwrt-feed/25.12/aarch64_generic/packages.adb`
 - 签名公钥：`https://down.dllkids.xyz/openwrt-feed/keys/dllkids-feed.pub.pem`

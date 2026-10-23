@@ -335,34 +335,39 @@ ALLOW_PROXY_CONFLICT=1 bash rockchip/build.sh
 > 新增代理栈时，记得同步更新 `rockchip/build.sh` 里的 `_PROXY_STACKS` 表、
 > 本表、以及 `shell/custom-packages.sh` 文件头「注意事项 2」的清单 —— 三处同步。
 
-### nikki 的内核版本：默认就是正式版（不是 Alpha）
+### nikki 的内核版本：默认跟随上游最新正式版（不是 Alpha）
 
 nikki **自身没有内核频道开关** —— `nikki.init` 直接执行 `/usr/bin/mihomo`，
 `nikki.conf` 与 LuCI 各视图均无版本设置；内核完全由 `mihomo` 包提供
 （实体 `/usr/libexec/mihomo-core`，`/usr/bin/mihomo` 是 alternatives 链接）。
 
-本构建的内核 = dllkids 源的 `mihomo` apk，由 kenzok8/small 从 mihomo
-**正式版 tag** 编译（源地址 `codeload.github.com/metacubex/mihomo/tar.gz/v<版本>`；
-提交历史 1.19.21 → 1.19.32 全部为正式版）。mihomo 的 Alpha 频道在上游是独立的
-`Prerelease-Alpha` tag，只有 nikki 官方 feed 的 `mihomo-alpha` 包跟它 ——
-本构建不引入该包，**天然与 Alpha 无关**。（nikki 上游仓库只提供
-`mihomo-alpha` / `mihomo-meta` 两个内核包，照那个 feed 装才会装到 Alpha。）
+mihomo 上游有两个发布频道：正式版 tag `v<版本>`（如 `v1.19.33`）与
+`Prerelease-Alpha`（alpha 分支快照）。nikki 官方 feed 的 `mihomo-alpha` 包跟
+Alpha；**本构建默认跟正式版，且是上游最新那个**，与 Alpha 无关。
 
-唯一差距是**滞后**而非频道：源内当前 `mihomo-1.19.31-r1`（2026-10-23 实测，
-该版本发布于 2026-09-14），上游最新正式版为 `v1.19.33`（2026-10-21）。
-本项目**默认就用源内这一份**（随源自动更新、可被 apk 正常升级，不钉版本）；
-如个别时候需要严格锁定某个正式版，再走下面的可选钉版。
+**内核来源三态**（`rockchip/build.sh`，按优先级）：
 
-- **默认（零维护，当前选择）**：什么都不用做。dllkids 二进制源重建后重新构建
-  固件即自动跟上（kenzok8/small master 已更新到 1.19.32，源侧会跟上到最新
-  正式版），符合「内核用源内 apk 包、不手动下载固定版本二进制」的既有设计；
-- **严格钉版最新正式版**：取消 `rockchip/build.sh` 里 `MIHOMO_CORE_VER` /
-  `MIHOMO_CORE_SHA256` 两行注释（已预填 `v1.19.33` 及其 sha256）。构建期会
-  下载 GitHub 正式版资产、校验 sha256 与 ELF 头（aarch64）后覆盖
-  `/usr/libexec/mihomo-core`；`/usr/bin/mihomo` 链接与 nikki 的
-  `DEPENDS:+mihomo` 均不受影响（依赖仍由源内 apk 满足，只是二进制被换掉）。
-  换版本时两行都要改（sha256 取 Release 页面资产旁标注的哈希）。
-  ⚠ 设备端执行 `apk upgrade mihomo` 会把文件恢复成源内版本，需重刷固件。
+1. **默认 · 跟随最新正式版**（`MIHOMO_CORE_TRACK=1`，无需任何配置）：
+   构建期经 GitHub API 解析 mihomo 最新正式版（`releases/latest` 只返回
+   非 draft / 非 prerelease），下载 `mihomo-linux-arm64-<tag>.gz`，
+   校验通过后覆盖 `/usr/libexec/mihomo-core`。上游发新正式版后**下次构建
+   自动跟上**，无需改仓库。校验链：HTTPS → `prerelease/draft=false` →
+   资产 URL 与 tag 精确同名（同 release 有 11 个 arm64 系资产，防下错）→
+   体积 ≥ 4 MiB → ELF + `e_machine=0xB7`(aarch64) → **二进制内嵌版本串与
+   tag 一致**（官方 release 由 `build.yml` 的 `-ldflags -X constant.Version=<tag>`
+   注入）。任一步失败即 `exit 1`，不静默回落。
+2. **钉版**（`MIHOMO_CORE_VER` + `MIHOMO_CORE_SHA256` 成对设置，已预填
+   `v1.19.33` 示例）：锁死指定正式版，多一层 sha256 校验（哈希取 Release
+   页面资产旁标注值）。换版本两行都要改。
+3. **用源内版本**（`MIHOMO_CORE_TRACK=0`）：完全用 dllkids 源 `mihomo` apk
+   的二进制（正式版，但滞后上游数周，随源重建自动更新）。
+
+覆盖机制与影响面：`files/` 由 `make image` 的 `FILES=` 在 apk 安装**之后**
+叠加（`include/rootfs.mk` 的 `prepare_rootfs`：先拷 FILES 再跑各包
+postinst；mihomo 包无 postinst，不冲突）。`/usr/bin/mihomo` 的 alternatives
+链接与 nikki 的 `DEPENDS:+mihomo` 均不受影响 —— 依赖仍由源内 mihomo apk
+满足，只是实体二进制被换掉。⚠ 设备端执行 `apk upgrade mihomo`（固件自带
+dllkids 源）会把文件恢复成源内版本，需重刷固件。
 
 ### 预置软件包清单
 
