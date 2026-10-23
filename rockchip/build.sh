@@ -328,11 +328,31 @@ if echo "$PACKAGES" | grep -q "luci-app-openclash"; then
     # 由 OpenClash 自身分发、与之最匹配，含 Smart 策略组支持。
     META_URL="https://raw.githubusercontent.com/vernesong/OpenClash/core/master/meta/clash-linux-arm64.tar.gz"
     META_BIN="files/etc/openclash/core/clash_meta"
+    META_TMP="files/etc/openclash/core/.clash_meta.tmp"
 
-    if ! wget -qO- "$META_URL" | tar xOvz > "$META_BIN" 2>/dev/null || [ ! -s "$META_BIN" ]; then
+    # 下载到临时文件、三重校验通过才 mv 成正式文件 —— 管道直写成品时，
+    # 「截断但 tar 恰好不报错」会把残缺二进制当成品发出去：
+    #   ① pipefail 下 wget / tar 任一失败即失败；
+    #   ② 体积 ≥ 4 MiB（clash_meta linux-arm64 实测 ~10 MiB，截断必远小于此）；
+    #   ③ 文件头是 ELF 且 e_machine=0xB7（EM_AARCH64），防下错架构/错误页。
+    if ! ( set -o pipefail; wget -qO- "$META_URL" | tar xOvz > "$META_TMP" 2>/dev/null ); then
         echo "ERROR: OpenClash meta 内核下载失败：$META_URL" >&2
+        rm -f "$META_TMP"
         exit 1
     fi
+    META_SIZE=$(wc -c < "$META_TMP" 2>/dev/null)
+    if [ "${META_SIZE:-0}" -lt 4194304 ]; then
+        echo "ERROR: meta 内核体积异常（${META_SIZE:-0} B < 4 MiB），疑似截断：$META_URL" >&2
+        rm -f "$META_TMP"
+        exit 1
+    fi
+    if [ "$(od -An -tx1 -N4 "$META_TMP" | tr -d ' \n')" != "7f454c46" ] \
+       || [ "$(od -An -tx1 -j18 -N2 "$META_TMP" | tr -d ' \n')" != "b700" ]; then
+        echo "ERROR: meta 内核不是 aarch64 ELF，疑似下错文件：$META_URL" >&2
+        rm -f "$META_TMP"
+        exit 1
+    fi
+    mv -f "$META_TMP" "$META_BIN"
     chmod +x "$META_BIN"
 
     # GeoIP / GeoSite（meta 内核使用）
@@ -343,6 +363,15 @@ if echo "$PACKAGES" | grep -q "luci-app-openclash"; then
         echo "ERROR: GeoIP/GeoSite 下载失败" >&2
         exit 1
     fi
+    # wget 退出码之外补 -s 非空校验：个别 CDN 故障返回 200 + 空 body 时
+    # 退出码反而是 0，只有体积能发现。
+    for _dat in files/etc/openclash/GeoIP.dat files/etc/openclash/GeoSite.dat; do
+        if [ ! -s "$_dat" ]; then
+            echo "ERROR: $_dat 为空（下载被静默截断）" >&2
+            exit 1
+        fi
+    done
+    unset _dat
 
     ls -lh "$META_BIN" files/etc/openclash/GeoIP.dat files/etc/openclash/GeoSite.dat
 else
