@@ -27,6 +27,14 @@ name: Audit Repository Consistency
 
 on:
   workflow_dispatch:
+  # 每周一定时在线审计：文档里的源侧数字（dllkids 包数 / 官方源总数）会随上游
+  # 源演进而漂移，而 push 触发只在「有人改仓库」时才跑 —— 2026-10-23 那次
+  # FAIL（文档 617/409 vs 实测 622/411）就是这么漏过来的。定时跑让「没人动
+  # 仓库」时的漂移也在一周内暴露，而不是等下一次人工审计。
+  # ⚠ GitHub 对 60 天无提交活动的仓库会停用定时工作流（本仓库活跃，不受影响）；
+  #   刻意避开整点：GitHub 官方建议错开 :00，减少定时任务排队。
+  schedule:
+    - cron: "17 18 * * 1"   # 每周一 18:17 UTC = 北京时间周二 02:17
   push:
     branches:
       - main
@@ -59,7 +67,10 @@ jobs:
   audit:
     # 固定 runner 版本，避免 ubuntu-latest 迁移（2026-10-19 → Ubuntu 26）带来的静默漂移。
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # 20 分钟：正常 1–5 分钟；留的余量是给「源站整体不可达」的最坏情况 ——
+    # fetch_retry 每个 URL 最坏约 8 分钟（4 次重试 + http 回退），靠 fetch 缓存
+    # 把重复抓取压掉后仍需这个量级，否则超时会把「源站抖动只 WARN」变成红叉。
+    timeout-minutes: 20
 
     steps:
       - name: Checkout code

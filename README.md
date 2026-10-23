@@ -423,7 +423,10 @@ python3 shell/audit.py --online   # 追加在线检查（拉官方源 + dllkids 
   也降级为 WARN —— 缺项很可能住在没取到的那个源里（`tinyproxy` / `https-dns-proxy`
   就在官方 luci feed、不在 dllkids），判 FAIL 就是误报。
 - **CI**：`.github/workflows/audit.yml`（**只读**，`permissions.contents: read`）
-  在 push 到 `main` 与 PR 时自动运行，改动上述任一文件即触发。
+  在 push 到 `main`、PR 与**每周定时**（周一 18:17 UTC = 北京时间周二 02:17）时
+  自动运行，改动上述任一文件即触发。定时跑的意义：源侧数字会随上游源演进漂移，
+  只靠 push 触发意味着「没人动仓库」时漂移能一直藏着（2026-10-23 的
+  617/409 → 622/411 就是这么漏过来的）。
 - **耗时**：检查 15（依赖闭包）要读 100+ 个 `.apk` 的前 32 KB 元数据，
   在线全跑约 1–4 分钟；内置 `CLOSURE_MAX_PKGS=500` / `CLOSURE_BUDGET_S=420` 双上限。
 

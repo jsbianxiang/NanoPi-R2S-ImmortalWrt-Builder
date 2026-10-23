@@ -165,7 +165,24 @@ def fetch(url: str, timeout: int = 45) -> str:
         return resp.read().decode("utf-8", "replace")
 
 
+# 单次运行内按 URL 记忆抓取结果：同一目录列表在一次审计里会被多个检查用到
+# （DLLKIDS_URL 被检查 10 的计数与 apk_catalog 的目录各抓一次；官方源的
+# index.json / 目录页也被 official_names 与 apk_catalog 各抓一次）。源站抖动时
+# 不缓存会让重试预算翻倍烧掉 —— 最坏情况（4 次重试 + http 回退 ≈ 8 分钟/URL）
+# 两次串行就能顶爆 job 超时，「源站不可达只 WARN」的设计随之失效。
+_FETCH_CACHE: dict[str, str] = {}
+
+
 def fetch_retry(url: str, timeout: int = 60, tries: int = 4) -> str:
+    """带重试的 fetch（同一次运行内同一 URL 只真抓一次，见 _FETCH_CACHE）。"""
+    if url in _FETCH_CACHE:
+        return _FETCH_CACHE[url]
+    html = _fetch_retry(url, timeout, tries)
+    _FETCH_CACHE[url] = html
+    return html
+
+
+def _fetch_retry(url: str, timeout: int = 60, tries: int = 4) -> str:
     """带重试的 fetch。
 
     ⚠ 本机代理会偶发 `UNEXPECTED_EOF_WHILE_READING` / 读超时（不是站点挂了）⇒
