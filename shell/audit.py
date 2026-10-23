@@ -34,6 +34,8 @@ shell/audit.py —— 仓库一致性自检（把「人工审计」里反复过�
   12. `_PROXY_STACKS` 全部 marker 是否存在于源（黑名单无死条目）
   13. `_PROXY_OK` 全部项是否存在于源
   14. 短名清单的 `luci-app-*` / `luci-i18n-*` 是否存在于源
+  14b. 短名清单是否**按官方源**可解析（custom-packages.sh「注意事项 5」的承诺：
+      官方源没有的前端一律剔除，不走第三方源兜底）
   15. **PACKAGES 依赖闭包**：用 bash 真实复现 build.sh 的 PACKAGES 拼接，BFS 解依赖
       闭包（读 `.apk` 前 32 KB 的 ADB 元数据），检查
         a) 显式包全部可解析；
@@ -813,6 +815,33 @@ def online_checks(version: str, decl: dict) -> None:
         f"除 I18N_BUILTIN（{i18n_builtin}）外全部存在独立中文包",
         f"缺 luci-i18n-<短名>-zh-cn：{miss_i18n}", both,
     )
+
+    # --- 14b. 短名清单的「官方源承诺」 ------------------------------------
+    # custom-packages.sh「注意事项 5」承诺：短名清单**按官方源**逐一校验，官方源
+    # 没有的前端全部剔除（haproxy-tcp / nft-qos / nikki 在 dllkids 有 luci-app-
+    # 前端，故不列入，要走「一、第三方插件」受代理互斥约束）。上面的 14 用的是
+    # 8 源合并目录，dllkids 会兜底放过「只在第三方源有」的短名 —— 这里单独按
+    # 官方源再核一遍，守住承诺。
+    # ⚠ 本检查只依赖官方源数据：off 取到了即可判 FAIL，dllkids 在否不影响结论
+    #   （承诺的对象就是官方源，不存在「住在没取到的源里」的辩解）。
+    if off:
+        miss_off_app = [n for n in shorts if f"luci-app-{n}" not in off]
+        miss_off_i18n = [
+            n for n in shorts
+            if n not in i18n_builtin and f"luci-i18n-{n}-zh-cn" not in off
+        ]
+        if not miss_off_app and not miss_off_i18n:
+            ok(
+                "短名清单：官方源承诺核验",
+                f"{len(shorts)}/{len(shorts)} 个短名在官方源（{len(off)} 包）"
+                "可解析 app / i18n ⇒「按官方源校验」承诺成立",
+            )
+        else:
+            fail(
+                "短名清单：官方源承诺核验",
+                f"仅第三方源可解析 ⇒ 违背承诺：app 缺 {miss_off_app}；"
+                f"i18n 缺 {miss_off_i18n}",
+            )
 
     # --- 15. 依赖闭包 & 第二个代理前端 -----------------------------------
     check_dependency_closure(version, stacks, explicit_hint=None)

@@ -416,7 +416,7 @@ python3 shell/audit.py --online   # 追加在线检查（拉官方源 + dllkids 
 | 类别 | 检查项 |
 | --- | --- |
 | 离线 | 三处代理清单同步（套数 / marker 零差集）· `_PROXY_OK` 白名单三处一致 · 短名清单格式与条数 · 工作流输入不直插 shell（`${{ inputs.* }}` 必须经 `env:` 中转）· 工作流 `IN_*` 变量已定义 · **构建期写入路径必须「已跟踪」或「已忽略」**（防止本地跑一次构建就脏工作区）· 全树 0 处 CRLF · `bash -n` 语法 |
-| 在线 | dllkids 可达性与包数 **vs 文档声明** · 官方 5 个 arch feed + target + kmods 总数 **vs 文档声明** · `_PROXY_STACKS` 全部 marker 是否存在（黑名单无死条目）· `_PROXY_OK` 各项是否存在 · 短名清单的 `luci-app-*` / `luci-i18n-*` 是否都存在 · **PACKAGES 依赖闭包**（见下） |
+| 在线 | dllkids 可达性与包数 **vs 文档声明** · 官方 5 个 arch feed + target + kmods 总数 **vs 文档声明** · `_PROXY_STACKS` 全部 marker 是否存在（黑名单无死条目）· `_PROXY_OK` 各项是否存在 · 短名清单的 `luci-app-*` / `luci-i18n-*` 是否都存在 · 短名清单**按官方源**可解析（custom-packages.sh「注意事项 5」承诺，不走第三方源兜底）· **PACKAGES 依赖闭包**（见下） |
 
 - **退出码**：`0` = 无 FAIL，`1` = 有 FAIL。**在线检查里「源站不可达」只记 WARN 不判 FAIL**
   （免得源站抖动就变红）；但源可达而数字对不上，判 FAIL。只取到**一个**源时，存在性检查
